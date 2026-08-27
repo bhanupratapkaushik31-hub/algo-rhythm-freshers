@@ -1,0 +1,500 @@
+import nodemailer from 'nodemailer';
+import { supabaseAdmin } from './supabaseAdmin';
+import { EVENT_CONFIG } from '@/config/event';
+
+const gmailUser = process.env.GMAIL_USER || 'scailpu@gmail.com';
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+const oauthClientId = process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_OAUTH_CLIENT_ID;
+const oauthClientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_OAUTH_CLIENT_SECRET;
+const oauthRefreshToken = process.env.GOOGLE_REFRESH_TOKEN || process.env.GMAIL_OAUTH_REFRESH_TOKEN;
+
+function getTransporter() {
+  // Option A: OAuth2 configuration
+  if (oauthRefreshToken && oauthClientId && oauthClientSecret) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: gmailUser,
+        clientId: oauthClientId,
+        clientSecret: oauthClientSecret,
+        refreshToken: oauthRefreshToken,
+      },
+    });
+  }
+  
+  // Option B: App Passwords configuration
+  if (gmailAppPassword) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
+      },
+    });
+  }
+
+  return null;
+}
+
+export async function sendTicketEmail(registrationId: string, force = false): Promise<boolean> {
+  const transporter = getTransporter();
+
+  if (!transporter) {
+    console.warn('Gmail sending configuration is missing. Email skipped.');
+    try {
+      await supabaseAdmin
+        .from('registrations')
+        .update({
+          email_sent: false,
+          email_status: 'FAILED',
+          email_error: 'GMAIL_APP_PASSWORD or GMAIL_OAUTH credentials are missing in environment variables.'
+        })
+        .eq('id', registrationId);
+    } catch (dbErr) {
+      console.error(`Failed to update email failure status (missing credentials) in DB for ${registrationId}:`, dbErr);
+    }
+    return false;
+  }
+
+  try {
+    // 1. Fetch student registration details
+    const { data: reg, error: regError } = await supabaseAdmin
+      .from('registrations')
+      .select('*')
+      .eq('id', registrationId)
+      .single();
+
+    if (regError || !reg) {
+      console.error(`Email delivery failed: Registration ${registrationId} not found.`, regError);
+      return false;
+    }
+
+    // Check if email was already sent successfully to prevent duplicates
+    if (!force && reg.email_sent && reg.email_status === 'SENT') {
+      console.log(`Email already sent for registration: ${registrationId}`);
+      return true;
+    }
+
+    // 2. Fetch payment details
+    const { data: payment } = await supabaseAdmin
+      .from('payments')
+      .select('*')
+      .eq('registration_id', registrationId)
+      .eq('payment_status', 'SUCCESS')
+      .maybeSingle();
+
+    const paymentMethodDisplay = payment?.payment_method === 'TEST_SIMULATOR' ? 'TEST SIMULATOR' : 'RAZORPAY';
+
+    // 3. Prepare ticket verification link
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const ticketUrl = `${appUrl}/ticket/${reg.ticket_token}`;
+
+    // 4. Render HTML template
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Your ALGO-RHYTHM 2K26 Ticket 🎉</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d0620;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+          }
+          .header {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+            padding: 30px;
+            text-align: center;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: 2px;
+            color: #ffffff;
+            text-transform: uppercase;
+            font-weight: 800;
+          }
+          .header p {
+            margin: 5px 0 0 0;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+          }
+          .content {
+            padding: 30px;
+            background-color: #120b2e;
+            color: #ffffff;
+          }
+          .welcome {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #ec4899;
+            font-weight: 600;
+          }
+          .ticket-details {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+          }
+          .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 8px;
+          }
+          .detail-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+          }
+          .label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+          }
+          .value {
+            font-weight: 600;
+            color: #ffffff;
+            font-size: 14px;
+            text-align: right;
+          }
+          .value.highlight {
+            color: #eab308;
+          }
+          .btn-container {
+            text-align: center;
+            margin: 30px 0;
+          }
+          .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+            color: #ffffff !important;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 14px;
+          }
+          .footer {
+            background-color: #0b051c;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>ALGO-RHYTHM</h1>
+            <p>CSE Fresher Party 2026 🎉</p>
+          </div>
+          <div class="content">
+            <p>Hello ${reg.full_name},</p>
+            <p>Your registration and payment for <strong>ALGO-RHYTHM – CSE Fresher Party 2026</strong> have been successfully completed.</p>
+            
+            <div class="ticket-details">
+              <div class="detail-row">
+                <span class="label">Full Name:</span>
+                <span class="value">${reg.full_name}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Registration No.:</span>
+                <span class="value">${reg.registration_number}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Year:</span>
+                <span class="value">${reg.year}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">School Name:</span>
+                <span class="value">${reg.school_name}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Modeling Choice:</span>
+                <span class="value">${reg.modeling}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Ticket ID:</span>
+                <span class="value highlight">${reg.ticket_id || 'Generating...'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Event Date:</span>
+                <span class="value">${EVENT_CONFIG.displayDate}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Event Venue:</span>
+                <span class="value">${EVENT_CONFIG.venue}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Amount:</span>
+                <span class="value">₹${EVENT_CONFIG.registrationFee}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Payment Status:</span>
+                <span class="value" style="color: #22c55e;">PAID</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Payment Method:</span>
+                <span class="value">${paymentMethodDisplay}</span>
+              </div>
+            </div>
+
+            <p style="margin-top: 25px;"><strong>Event:</strong><br/>ALGO-RHYTHM – ${EVENT_CONFIG.hostedBy} CSE Fresher Party 2026</p>
+            <p><strong>Date:</strong><br/>${EVENT_CONFIG.displayDate}</p>
+            <p><strong>Time:</strong><br/>${EVENT_CONFIG.displayTime}</p>
+            <p><strong>Venue:</strong><br/>${EVENT_CONFIG.venue}</p>
+
+            <p style="margin-top: 25px;">Please click the button below to view, print, or download your digital entry ticket. You will need to show the QR code on your ticket at the entrance for verification.</p>
+            
+            <div class="btn-container">
+              <a href="${ticketUrl}" class="btn">View Ticket</a>
+            </div>
+            
+            <p style="font-size: 12px; color: rgba(255, 255, 255, 0.5); text-align: center; margin-top: 30px;">
+              For any queries, contact Bhanu Pratap Kaushik (8273930552) or Vaidya Vaibhava (9441262727).
+            </p>
+          </div>
+          <div class="footer">
+            &copy; 2026 ${EVENT_CONFIG.hostedBy}. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 5. Dispatch Email via Gmail SMTP/API
+    const mailOptions = {
+      from: `ALGO-RHYTHM <${gmailUser}>`,
+      to: reg.email,
+      subject: `Your ALGO-RHYTHM 2K26 Ticket 🎉`,
+      html: htmlContent,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Gmail Service] Email sent successfully to ${reg.email}. Message ID: ${info.messageId}`);
+
+    // 6. Update database record: Store status SENT, sent time, and use email_error to log the messageId
+    const timestamp = new Date().toISOString();
+    await supabaseAdmin
+      .from('registrations')
+      .update({
+        email_sent: true,
+        email_status: 'SENT',
+        email_sent_at: timestamp,
+        email_error: `MSG_ID: ${info.messageId}`,
+        updated_at: timestamp
+      })
+      .eq('id', registrationId);
+
+    return true;
+
+  } catch (emailErr: any) {
+    console.error(`Gmail sending error for registration ${registrationId}:`, emailErr);
+    try {
+      const timestamp = new Date().toISOString();
+      await supabaseAdmin
+        .from('registrations')
+        .update({
+          email_sent: false,
+          email_status: 'FAILED',
+          email_error: emailErr.message || String(emailErr),
+          updated_at: timestamp
+        })
+        .eq('id', registrationId);
+    } catch (dbErr) {
+      console.error(`Failed to update email failure status in DB for ${registrationId}:`, dbErr);
+    }
+    return false;
+  }
+}
+
+export async function sendRefundEmail(details: {
+  email: string;
+  name: string;
+  registrationNumber: string;
+  paymentId: string;
+  refundId?: string;
+  amount: string;
+  reason: string;
+}): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn('Gmail sending configuration is missing. Refund email skipped.');
+    return false;
+  }
+
+  try {
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Refund Initiated — ALGO-RHYTHM 2K26</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d0620;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+          }
+          .header {
+            background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+            padding: 30px;
+            text-align: center;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 1px;
+            color: #ffffff;
+            text-transform: uppercase;
+            font-weight: 800;
+          }
+          .content {
+            padding: 30px;
+            background-color: #120b2e;
+            color: #ffffff;
+          }
+          .welcome {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #f87171;
+            font-weight: 600;
+          }
+          .refund-details {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+          }
+          .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 8px;
+          }
+          .detail-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+          }
+          .label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+          }
+          .value {
+            font-weight: 600;
+            color: #ffffff;
+            font-size: 14px;
+            text-align: right;
+          }
+          .footer {
+            background-color: #0b051c;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Refund Initiated</h1>
+            <p>ALGO-RHYTHM 2K26 🚫</p>
+          </div>
+          <div class="content">
+            <p class="welcome">Hello ${details.name},</p>
+            <p>Your payment was successfully received, but due to an irrecoverable system processing error, your registration could not be completed securely.</p>
+            <p>A full refund has been automatically initiated back to your original payment method. Depending on your bank, refunds usually reflect within 5-7 business days.</p>
+            
+            <div class="refund-details">
+              <div class="detail-row">
+                <span class="label">Student Name:</span>
+                <span class="value">${details.name}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Registration No.:</span>
+                <span class="value">${details.registrationNumber}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Refund Amount:</span>
+                <span class="value">₹${details.amount}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Razorpay Payment ID:</span>
+                <span class="value">${details.paymentId}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Refund Transaction ID:</span>
+                <span class="value">${details.refundId || 'Processing...'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">Reason for Refund:</span>
+                <span class="value" style="color: #f87171;">${details.reason}</span>
+              </div>
+            </div>
+            
+            <p style="font-size: 12px; color: rgba(255, 255, 255, 0.5); text-align: center; margin-top: 30px;">
+              If you have any questions or did not receive your refund, please contact support: scailpu@gmail.com
+            </p>
+          </div>
+          <div class="footer">
+            &copy; 2026 School of Computing and AI. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const mailOptions = {
+      from: `ALGO-RHYTHM <${gmailUser}>`,
+      to: details.email,
+      subject: `Refund Initiated — ALGO-RHYTHM 2K26`,
+      html: htmlContent,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Gmail Service] Refund notification sent to ${details.email}. Msg ID: ${info.messageId}`);
+    return true;
+
+  } catch (emailErr) {
+    console.error(`Gmail sending error for refund notification:`, emailErr);
+    return false;
+  }
+}
+
