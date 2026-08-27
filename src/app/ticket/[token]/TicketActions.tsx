@@ -25,25 +25,15 @@ export default function TicketActions({ ticketId }: TicketActionsProps) {
 
     setDownloadingImage(true);
     try {
-      // Temporarily reset scroll to avoid html2canvas empty offset bug
-      const currentScrollY = window.scrollY;
-      const currentScrollX = window.scrollX;
-      window.scrollTo(0, 0);
-
       const canvas = await html2canvas(element, {
-        scale: 3, // High quality scale
+        scale: 2, // Safe scale for both desktop and mobile memory limits
         useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#0c0724', // deep navy purple
+        allowTaint: false, // Must be false to prevent security error on toDataURL
+        backgroundColor: '#0c0724', // deep navy purple matching element
         logging: false,
         scrollX: 0,
-        scrollY: 0,
-        windowWidth: document.documentElement.offsetWidth,
-        windowHeight: document.documentElement.offsetHeight
+        scrollY: 0
       });
-
-      // Restore scroll
-      window.scrollTo(currentScrollX, currentScrollY);
 
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
@@ -65,23 +55,15 @@ export default function TicketActions({ ticketId }: TicketActionsProps) {
 
     setDownloadingPdf(true);
     try {
-      const currentScrollY = window.scrollY;
-      const currentScrollX = window.scrollX;
-      window.scrollTo(0, 0);
-
       const canvas = await html2canvas(element, {
-        scale: 3, // Match high quality
+        scale: 2, // Match high quality
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false, // Must be false to prevent security error on toDataURL
         backgroundColor: '#0c0724',
         logging: false,
         scrollX: 0,
-        scrollY: 0,
-        windowWidth: document.documentElement.offsetWidth,
-        windowHeight: document.documentElement.offsetHeight
+        scrollY: 0
       });
-
-      window.scrollTo(currentScrollX, currentScrollY);
 
       const imgData = canvas.toDataURL('image/png');
 
