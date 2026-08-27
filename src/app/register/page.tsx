@@ -279,7 +279,7 @@ export default function Register() {
 
               {/* Submit Button */}
               <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row gap-4 justify-between items-center">
-                <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory</span>
+                <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
                 <button
                   type="submit"
                   disabled={submitting}

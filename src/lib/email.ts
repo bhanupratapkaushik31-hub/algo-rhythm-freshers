@@ -283,7 +283,46 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
       </html>
     `;
 
-    // 5. Dispatch Email via Gmail SMTP/API
+    // 5. Dispatch Email (Try Resend first if API key exists, otherwise fallback to Gmail SMTP)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        console.log(`[Email Service] Attempting Resend dispatch for ${reg.email}...`);
+        const { Resend } = require('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'ALGO-RHYTHM <noreply@resend.dev>';
+        
+        const resendRes = await resend.emails.send({
+          from: fromEmail,
+          to: reg.email,
+          subject: `Your ALGO-RHYTHM 2K26 Ticket 🎉`,
+          html: htmlContent,
+        });
+
+        if (resendRes.error) {
+          throw new Error(resendRes.error.message || 'Resend API returned an error.');
+        }
+
+        const resendId = resendRes.data?.id || 'RESEND_OK';
+        console.log(`[Resend Service] Email sent successfully to ${reg.email}. ID: ${resendId}`);
+
+        const timestamp = new Date().toISOString();
+        await supabaseAdmin
+          .from('registrations')
+          .update({
+            email_sent: true,
+            email_status: 'SENT',
+            email_sent_at: timestamp,
+            email_error: `RESEND_ID: ${resendId}`,
+            updated_at: timestamp
+          })
+          .eq('id', registrationId);
+
+        return true;
+      } catch (resendErr: any) {
+        console.warn(`[Resend Service] Resend dispatch failed, falling back to Gmail transporter:`, resendErr.message || resendErr);
+      }
+    }
+
     const mailOptions = {
       from: `ALGO-RHYTHM <${gmailUser}>`,
       to: reg.email,

@@ -25,13 +25,25 @@ export default function TicketActions({ ticketId }: TicketActionsProps) {
 
     setDownloadingImage(true);
     try {
-      // Temporarily hide buttons if they are inside the capture container (which they are not, but safety check)
+      // Temporarily reset scroll to avoid html2canvas empty offset bug
+      const currentScrollY = window.scrollY;
+      const currentScrollX = window.scrollX;
+      window.scrollTo(0, 0);
+
       const canvas = await html2canvas(element, {
         scale: 3, // High quality scale
         useCORS: true,
+        allowTaint: true,
         backgroundColor: '#0c0724', // deep navy purple
         logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: document.documentElement.offsetWidth,
+        windowHeight: document.documentElement.offsetHeight
       });
+
+      // Restore scroll
+      window.scrollTo(currentScrollX, currentScrollY);
 
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
@@ -40,7 +52,7 @@ export default function TicketActions({ ticketId }: TicketActionsProps) {
       link.click();
     } catch (err) {
       console.error('Image export failed:', err);
-      alert('Failed to generate image. Please try printing or take a screenshot.');
+      alert('Failed to generate high-quality image. Please try taking a screenshot.');
     } finally {
       setDownloadingImage(false);
     }
@@ -53,30 +65,38 @@ export default function TicketActions({ ticketId }: TicketActionsProps) {
 
     setDownloadingPdf(true);
     try {
+      const currentScrollY = window.scrollY;
+      const currentScrollX = window.scrollX;
+      window.scrollTo(0, 0);
+
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: 3, // Match high quality
         useCORS: true,
+        allowTaint: true,
         backgroundColor: '#0c0724',
         logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: document.documentElement.offsetWidth,
+        windowHeight: document.documentElement.offsetHeight
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      
-      // Calculate dimensions in pixels
-      const imgWidth = canvas.width / 2.5;
-      const imgHeight = canvas.height / 2.5;
+      window.scrollTo(currentScrollX, currentScrollY);
 
+      const imgData = canvas.toDataURL('image/png');
+
+      // Create PDF matching the high-quality canvas dimensions exactly
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [imgWidth, imgHeight]
+        format: [canvas.width, canvas.height]
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
       pdf.save(`ALGO_RHYTHM_Ticket_${ticketId}.pdf`);
     } catch (err) {
       console.error('PDF export failed:', err);
-      alert('Failed to generate PDF. Please try image download or printing.');
+      alert('Failed to generate PDF. Please download as an image or use print.');
     } finally {
       setDownloadingPdf(false);
     }

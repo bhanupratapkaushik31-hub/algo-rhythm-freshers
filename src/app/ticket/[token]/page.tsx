@@ -89,48 +89,52 @@ export default async function TicketPage({ params }: TicketPageProps) {
       {/* Printable CSS override styling */}
       <style>{`
         @media print {
-          body {
-            background: white !important;
-            color: black !important;
+          @page {
+            margin: 0;
+            size: portrait;
           }
-          .print-container {
-            padding: 0 !important;
+          html, body {
+            background: #060214 !important;
             margin: 0 !important;
-            background: white !important;
-          }
-          .print-ticket-card {
-            background: white !important;
-            color: #000000 !important;
-            border: 2px solid #000000 !important;
-            box-shadow: none !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
             width: 100% !important;
-            max-width: 500px !important;
-            margin: 0 auto !important;
-            border-radius: 12px !important;
+            height: 100% !important;
             overflow: hidden !important;
           }
+          /* Hide everything */
+          body * {
+            visibility: hidden !important;
+          }
+          /* Only display the ticket and its descendants */
+          #event-ticket, #event-ticket * {
+            visibility: visible !important;
+          }
+          #event-ticket {
+            position: absolute !important;
+            left: 50% !important;
+            top: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            width: 90vw !important;
+            max-width: 360px !important;
+            border: 1px solid rgba(168, 85, 247, 0.2) !important;
+            border-radius: 24px !important;
+            background: #0c0724 !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          /* Ensure text colors are kept */
           .print-text-dark {
-            color: #000000 !important;
-          }
-          .print-text-slate {
-            color: #4b5563 !important;
-          }
-          .print-border-dashed {
-            border-color: #000000 !important;
-          }
-          .print-bg-slate {
-            background-color: #f3f4f6 !important;
-            border: 1px solid #e5e7eb !important;
-          }
-          .print-badge {
-            border: 1px solid #10b981 !important;
-            color: #10b981 !important;
-            background: none !important;
+            color: #ffffff !important;
           }
         }
       `}</style>
 
-      <div className="w-full max-w-sm space-y-6 print:max-w-none print:w-auto">
+      <div className="w-full max-w-sm space-y-6 print:max-w-none print:w-auto print-container">
         
         {/* Ticket Container */}
         <div 
