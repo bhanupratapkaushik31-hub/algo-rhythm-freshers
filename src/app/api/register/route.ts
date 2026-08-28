@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { registerSchema } from '@/lib/schemas';
+import { EVENT_CONFIG } from '@/config/event';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
@@ -99,21 +100,22 @@ export async function POST(request: NextRequest) {
           }, { status: 500 });
         }
 
-        // Ensure payment record exists
+        // Ensure payment record exists safely without duplicate creation
         try {
-          const { data: existingPay } = await supabaseAdmin
+          const { data: existingPays } = await supabaseAdmin
             .from('payments')
             .select('id')
             .eq('registration_id', updatedReg.id)
-            .maybeSingle();
+            .order('created_at', { ascending: false });
 
-          if (!existingPay) {
+          if (!existingPays || existingPays.length === 0) {
+            const feePaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
             await supabaseAdmin
               .from('payments')
               .insert({
                 registration_id: updatedReg.id,
                 razorpay_order_id: `order_pending_${updatedReg.id.substring(0, 8)}`,
-                amount: 5000,
+                amount: feePaise,
                 currency: 'INR',
                 payment_status: 'PENDING'
               });
@@ -176,7 +178,7 @@ export async function POST(request: NextRequest) {
         .insert({
           registration_id: newReg.id,
           razorpay_order_id: `order_pending_${newReg.id.substring(0, 8)}`,
-          amount: 5000,
+          amount: Number(EVENT_CONFIG.registrationFeePaise) || 5000,
           currency: 'INR',
           payment_status: 'PENDING'
         });

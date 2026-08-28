@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTicketEmail } from '@/lib/email';
+import { EVENT_CONFIG } from '@/config/event';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
 
@@ -18,9 +19,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     if (!keySecret) {
-      console.error('Razorpay secret missing on server.');
+      console.error('[Verify Payment] Razorpay secret missing on server.');
       return NextResponse.json({
         success: false,
         error: {
@@ -47,6 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isVerified) {
+      console.error('[Verify Payment] Signature mismatch.');
       return NextResponse.json({
         success: false,
         error: {
@@ -56,15 +59,17 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Fetch payment record
-    const { data: payment, error: payError } = await supabaseAdmin
+    // 2. Fetch payment record safely
+    const { data: payments, error: payError } = await supabaseAdmin
       .from('payments')
       .select('*')
       .eq('razorpay_order_id', razorpay_order_id)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
+
+    const payment = payments?.[0];
 
     if (payError || !payment) {
-      console.error('Verify Payment: DB error or payment not found:', payError);
+      console.error('[Verify Payment] DB error or payment not found:', payError);
       return NextResponse.json({
         success: false,
         error: {
@@ -76,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Confirm the order ID belongs to the correct registration
     if (payment.registration_id !== registration_id) {
-      console.error(`Verify Payment: Registration ID mismatch. Expected ${payment.registration_id}, got ${registration_id}`);
+      console.error(`[Verify Payment] Registration ID mismatch. Expected ${payment.registration_id}, got ${registration_id}`);
       return NextResponse.json({
         success: false,
         error: {
@@ -86,9 +91,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 4. Confirm amount is 5000 paise (₹50)
-    if (payment.amount !== 5000) {
-      console.error(`Verify Payment: Amount mismatch. Expected 5000, got ${payment.amount}`);
+    // 4. Confirm amount matches configured ticket price
+    const expectedPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+    if (payment.amount !== expectedPaise) {
+      console.error(`[Verify Payment] Amount mismatch. Expected ${expectedPaise}, got ${payment.amount}`);
       return NextResponse.json({
         success: false,
         error: {
@@ -100,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     // 5. Confirm currency is INR
     if (payment.currency !== 'INR') {
-      console.error(`Verify Payment: Currency mismatch. Expected INR, got ${payment.currency}`);
+      console.error(`[Verify Payment] Currency mismatch. Expected INR, got ${payment.currency}`);
       return NextResponse.json({
         success: false,
         error: {
@@ -110,13 +116,22 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Idempotency: If already paid, return success immediately
+    const timestamp = new Date().toISOString();
+
+    // Idempotency: If already paid, ensure registration is PAID and return success immediately
     if (payment.payment_status === 'SUCCESS') {
       const { data: reg } = await supabaseAdmin
         .from('registrations')
-        .select('ticket_token')
+        .select('ticket_token, registration_status')
         .eq('id', payment.registration_id)
         .single();
+
+      if (reg && reg.registration_status !== 'PAID') {
+        await supabaseAdmin
+          .from('registrations')
+          .update({ registration_status: 'PAID', updated_at: timestamp })
+          .eq('id', payment.registration_id);
+      }
 
       return NextResponse.json({
         success: true,
@@ -126,21 +141,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const timestamp = new Date().toISOString();
-
     // Fetch the payment details from Razorpay to get the actual payment method (upi, card, netbanking, etc)
     let paymentMethod = 'RAZORPAY';
     try {
-      const razorpay = new Razorpay({
-        key_id: process.env.RAZORPAY_KEY_ID || '',
-        key_secret: process.env.RAZORPAY_KEY_SECRET || '',
-      });
-      const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
-      if (paymentDetails && paymentDetails.method) {
-        paymentMethod = paymentDetails.method;
+      if (keyId) {
+        const razorpay = new Razorpay({
+          key_id: keyId,
+          key_secret: keySecret,
+        });
+        const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+        if (paymentDetails && paymentDetails.method) {
+          paymentMethod = paymentDetails.method;
+        }
       }
     } catch (fetchErr) {
-      console.warn('Failed to fetch payment details from Razorpay:', fetchErr);
+      console.warn('[Verify Payment] Failed to fetch payment details from Razorpay:', fetchErr);
     }
 
     // 3. Mark Payment as Success
@@ -157,7 +172,7 @@ export async function POST(request: NextRequest) {
       .eq('id', payment.id);
 
     if (payUpdateError) {
-      console.error('Verify Payment: Update payment error:', payUpdateError);
+      console.error('[Verify Payment] Update payment error:', payUpdateError);
       return NextResponse.json({
         success: false,
         error: {

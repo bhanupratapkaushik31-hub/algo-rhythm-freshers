@@ -45,12 +45,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Initialize Razorpay
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    const amountInPaise = EVENT_CONFIG.registrationFeePaise;
-    
-    if (!keyId || !keySecret || keyId.includes('placeholder') || keySecret.includes('placeholder')) {
+    // 2. Initialize Razorpay credentials & mode
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+    const isSimulatorMode = process.env.PAYMENT_MODE === 'simulator';
+    const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+    const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
+
+    if (!isSimulatorMode && !isRazorpayConfigured) {
+      console.error('[Create Order] Razorpay credentials missing or placeholder in live mode.');
       return NextResponse.json({
         success: false,
         error: {
@@ -60,54 +63,64 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    let order: { id: string; amount: number; currency: string } = {
-      id: '',
-      amount: amountInPaise,
-      currency: 'INR'
-    };
+    let orderId = '';
 
-    const razorpay = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
-    });
+    if (isSimulatorMode && !isRazorpayConfigured) {
+      // Offline Simulator Mode without Razorpay Keys
+      orderId = `order_sim_${reg.id.substring(0, 8)}_${Date.now()}`;
+      console.log(`[Create Order] Generated simulator order: ${orderId}`);
+    } else {
+      // Live or Test Razorpay Gateway Mode
+      const razorpay = new Razorpay({
+        key_id: keyId!,
+        key_secret: keySecret!,
+      });
 
-    // 3. Create Razorpay Order
-    const orderOptions = {
-      amount: amountInPaise,
-      currency: 'INR',
-      receipt: `receipt_${reg.id.substring(0, 8)}`,
-      notes: {
-        registration_id: reg.id,
-        registration_number: reg.registration_number,
-        full_name: reg.full_name,
-        email: reg.email,
-      },
-    };
+      const orderOptions = {
+        amount: amountInPaise,
+        currency: 'INR',
+        receipt: `rcpt_${reg.id.substring(0, 8)}_${Date.now().toString().slice(-4)}`,
+        notes: {
+          registration_id: reg.id,
+          registration_number: reg.registration_number,
+          full_name: reg.full_name,
+          email: reg.email,
+        },
+      };
 
-    const realOrder = await razorpay.orders.create(orderOptions);
-    order.id = realOrder.id;
+      const realOrder = await razorpay.orders.create(orderOptions);
+      orderId = realOrder.id;
+      console.log(`[Create Order] Successfully created Razorpay order: ${orderId} for registration: ${reg.id}`);
+    }
 
-    // 4. Save Payment record in database
-    // Check if there is an existing payment record for this registration, update or insert
-    const { data: existingPay } = await supabaseAdmin
+    // 4. Save Payment record in database cleanly without duplicate crashes
+    const { data: existingPayments, error: fetchPayError } = await supabaseAdmin
       .from('payments')
-      .select('id')
+      .select('id, payment_status')
       .eq('registration_id', reg.id)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
 
-    if (existingPay) {
+    if (fetchPayError) {
+      console.error('[Create Order] Failed to query existing payments:', fetchPayError);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    if (existingPayments && existingPayments.length > 0) {
+      const primaryPay = existingPayments[0];
       const { error: updateError } = await supabaseAdmin
         .from('payments')
         .update({
-          razorpay_order_id: order.id,
+          razorpay_order_id: orderId,
           amount: amountInPaise,
+          currency: 'INR',
           payment_status: 'PENDING',
-          updated_at: new Date().toISOString()
+          updated_at: timestamp
         })
-        .eq('id', existingPay.id);
+        .eq('id', primaryPay.id);
 
       if (updateError) {
-        console.error('Payment record update error:', updateError);
+        console.error('[Create Order] Payment record update error:', updateError);
         return NextResponse.json({
           success: false,
           error: {
@@ -116,18 +129,34 @@ export async function POST(request: NextRequest) {
           }
         }, { status: 500 });
       }
+
+      // If there are duplicate pending records, clean up redundant pending records
+      if (existingPayments.length > 1) {
+        const redundantIds = existingPayments
+          .slice(1)
+          .filter((p: { id: string; payment_status: string }) => p.payment_status === 'PENDING')
+          .map((p: { id: string; payment_status: string }) => p.id);
+
+        if (redundantIds.length > 0) {
+          await supabaseAdmin
+            .from('payments')
+            .delete()
+            .in('id', redundantIds);
+        }
+      }
     } else {
       const { error: insertError } = await supabaseAdmin
         .from('payments')
         .insert({
           registration_id: reg.id,
-          razorpay_order_id: order.id,
+          razorpay_order_id: orderId,
           amount: amountInPaise,
+          currency: 'INR',
           payment_status: 'PENDING'
         });
 
       if (insertError) {
-        console.error('Payment record insert error:', insertError);
+        console.error('[Create Order] Payment record insert error:', insertError);
         return NextResponse.json({
           success: false,
           error: {
@@ -138,16 +167,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Return success with Order info and public Key ID
+    // 5. Return success with Order info and public Key ID (never secret)
     return NextResponse.json({
       success: true,
       data: {
-        order_id: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        key_id: keyId,
-        razorpay_configured: true,
-        payment_mode: 'live',
+        order_id: orderId,
+        amount: amountInPaise,
+        currency: 'INR',
+        key_id: keyId || '',
+        razorpay_configured: isRazorpayConfigured,
+        payment_mode: isSimulatorMode ? 'simulator' : 'live',
         student: {
           name: reg.full_name,
           email: reg.email,
@@ -159,7 +188,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error('Create Order API error:', err);
+    console.error('[Create Order API Error]:', err);
     return NextResponse.json({
       success: false,
       error: {
@@ -169,3 +198,4 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+

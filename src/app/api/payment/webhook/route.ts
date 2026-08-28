@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTicketEmail } from '@/lib/email';
 import { initiateAutoRefund } from '@/lib/refund';
+import { EVENT_CONFIG } from '@/config/event';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
     if (!webhookSecret) {
       console.error('[Webhook Error] RAZORPAY_WEBHOOK_SECRET is missing in environment configurations.');
       return NextResponse.json({
@@ -98,17 +99,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, message: 'Refund initiated (missing order_id)' });
       }
 
-      // Verify that the payment belongs to the correct registration/order
-      const { data: payment, error: fetchPayErr } = await supabaseAdmin
+      // Verify that the payment belongs to the correct registration/order safely
+      const { data: payments, error: fetchPayErr } = await supabaseAdmin
         .from('payments')
         .select('*')
         .eq('razorpay_order_id', razorpayOrderId)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
 
       if (fetchPayErr) {
         console.error('[Webhook DB Error] Failed to fetch payment record:', fetchPayErr);
         return NextResponse.json({ success: false, message: 'DB fetch failed' }, { status: 500 });
       }
+
+      const payment = payments?.[0];
 
       if (!payment) {
         console.warn(`[Webhook] No local payment record found for Order ID: ${razorpayOrderId}. Refunding.`);
@@ -116,10 +119,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, message: 'Refund initiated (no local record)' });
       }
 
-      // Verify amount (₹50 = 5000 paise)
-      if (amount !== 5000 || currency !== 'INR') {
-        console.error(`[Webhook Error] Amount or currency mismatch. Expected 5000 INR, got ${amount} ${currency}`);
-        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected 5000 INR, got ${amount} ${currency}.`);
+      // Verify amount
+      const expectedAmount = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+      if (amount !== expectedAmount || currency !== 'INR') {
+        console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}`);
+        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}.`);
         return NextResponse.json({ success: false, error: { message: 'Amount/currency mismatch. Refund initiated.' } }, { status: 400 });
       }
 
@@ -204,11 +208,13 @@ export async function POST(request: NextRequest) {
       console.log(`[Webhook] Processing payment.failed. Payment ID: ${razorpayPaymentId}, Order ID: ${razorpayOrderId}, Reason: ${failureReason}`);
 
       if (razorpayOrderId) {
-        const { data: payment } = await supabaseAdmin
+        const { data: payments } = await supabaseAdmin
           .from('payments')
           .select('*')
           .eq('razorpay_order_id', razorpayOrderId)
-          .maybeSingle();
+          .order('created_at', { ascending: false });
+
+        const payment = payments?.[0];
 
         if (payment && payment.payment_status !== 'SUCCESS') {
           const timestamp = new Date().toISOString();

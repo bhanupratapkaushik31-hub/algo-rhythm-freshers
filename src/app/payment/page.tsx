@@ -27,6 +27,7 @@ function PaymentContent() {
     typeof window !== 'undefined' && !!(window as any).Razorpay
   );
   const [verifying, setVerifying] = useState(false);
+  const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
   const [alreadyPaidToken, setAlreadyPaidToken] = useState<string | null>(null);
 
   // Simulator specific states
@@ -35,6 +36,52 @@ function PaymentContent() {
 
   const [paymentStatus, setPaymentStatus] = useState<string>('PENDING');
   const [checkingStatus, setCheckingStatus] = useState(true);
+
+  // Helper to ensure Razorpay checkout script is loaded on-demand
+  const ensureRazorpayLoaded = async (): Promise<boolean> => {
+    if (typeof window === 'undefined') return false;
+    if ((window as any).Razorpay) {
+      setRazorpayLoaded(true);
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const existing = document.querySelector('script[src*="checkout.razorpay.com"]');
+      if (existing) {
+        if ((window as any).Razorpay) {
+          setRazorpayLoaded(true);
+          return resolve(true);
+        }
+        const onScriptLoad = () => {
+          setRazorpayLoaded(true);
+          resolve(true);
+        };
+        existing.addEventListener('load', onScriptLoad, { once: true });
+        existing.addEventListener('error', () => resolve(false), { once: true });
+        setTimeout(() => {
+          const ok = !!(window as any).Razorpay;
+          setRazorpayLoaded(ok);
+          resolve(ok);
+        }, 3000);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => {
+        setRazorpayLoaded(true);
+        resolve(true);
+      };
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+      setTimeout(() => {
+        const ok = !!(window as any).Razorpay;
+        setRazorpayLoaded(ok);
+        resolve(ok);
+      }, 5000);
+    });
+  };
 
   // 1. Check payment status and initialize checkout on mount
   useEffect(() => {
@@ -112,10 +159,12 @@ function PaymentContent() {
 
 
   // 2. Trigger Razorpay Checkout Modal
-  const handlePayment = () => {
-    console.log('PAYMENT BUTTON CLICKED');
+  const handlePayment = async () => {
+    console.log('[Payment] Initiating Razorpay checkout...');
+    if (isCheckoutOpening || verifying) return;
+
     if (!paymentData) {
-      console.log('handlePayment: paymentData is null');
+      setError('Payment order details not loaded yet. Please wait or reload.');
       return;
     }
 
@@ -124,71 +173,91 @@ function PaymentContent() {
       return;
     }
 
-    // Safely check if Razorpay script is loaded on window
-    const isRzpLoaded = razorpayLoaded || (typeof window !== 'undefined' && !!(window as any).Razorpay);
-    if (!isRzpLoaded) {
-      setError('Payment gateway (Razorpay) could not be loaded. Please reload the page or check your connection.');
+    setIsCheckoutOpening(true);
+    setError(null);
+
+    // Safely verify and load Razorpay checkout script
+    const isRzpLoaded = await ensureRazorpayLoaded();
+    if (!isRzpLoaded || typeof (window as any).Razorpay === 'undefined') {
+      setError('Payment gateway (Razorpay) could not be loaded. Please check your internet connection or disable ad-blockers and try again.');
+      setIsCheckoutOpening(false);
       console.error('Razorpay SDK is not loaded on window.');
       return;
     }
 
-    setError(null);
-    const options = {
-      key: paymentData.key_id,
-      amount: paymentData.amount,
-      currency: paymentData.currency,
-      name: EVENT_CONFIG.name,
-      description: `${EVENT_CONFIG.name} CSE Fresher Party Registration`,
-      image: '/favicon.ico',
-      order_id: paymentData.order_id,
-      handler: async function (response: any) {
-        setVerifying(true);
-        try {
-          const verifyResponse = await fetch('/api/payment/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              registration_id: registrationId
-            }),
-          });
+    try {
+      const options = {
+        key: paymentData.key_id,
+        amount: paymentData.amount,
+        currency: paymentData.currency,
+        name: EVENT_CONFIG.name,
+        description: `${EVENT_CONFIG.name} CSE Fresher Party Registration`,
+        image: '/favicon.ico',
+        order_id: paymentData.order_id,
+        handler: async function (response: any) {
+          setVerifying(true);
+          setIsCheckoutOpening(false);
+          try {
+            const verifyResponse = await fetch('/api/payment/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                registration_id: registrationId
+              }),
+            });
 
-          const verifyRes = await verifyResponse.json();
+            const verifyRes = await verifyResponse.json();
 
-          if (!verifyResponse.ok || !verifyRes.success) {
-            setError(verifyRes.error?.message || 'Payment signature verification failed.');
+            if (!verifyResponse.ok || !verifyRes.success) {
+              setError(verifyRes.error?.message || 'Payment signature verification failed.');
+              setVerifying(false);
+              return;
+            }
+
+            // Verification succeeded: Redirect to success page with secure token
+            router.push(`/success?token=${verifyRes.data.ticket_token}`);
+
+          } catch (err) {
+            console.error('Verification error:', err);
+            setError('Failed to verify payment with server. If amount was debited, contact coordinators.');
             setVerifying(false);
-            return;
           }
-
-          // Verification succeeded: Redirect to success page with secure token
-          router.push(`/success?token=${verifyRes.data.ticket_token}`);
-
-        } catch (err) {
-          console.error('Verification error:', err);
-          setError('Failed to verify payment with server. If amount was debited, contact coordinators.');
-          setVerifying(false);
+        },
+        prefill: {
+          name: paymentData.student?.name || '',
+          email: paymentData.student?.email || '',
+          contact: paymentData.student?.phone || '',
+        },
+        theme: {
+          color: '#a855f7',
+        },
+        modal: {
+          ondismiss: function () {
+            console.log('Payment modal dismissed by user');
+            setIsCheckoutOpening(false);
+          }
         }
-      },
-      prefill: {
-        name: paymentData.student.name,
-        email: paymentData.student.email,
-        contact: paymentData.student.phone,
-      },
-      theme: {
-        color: '#a855f7',
-      },
-      modal: {
-        ondismiss: function () {
-          console.log('Payment modal dismissed');
-        }
-      }
-    };
+      };
 
-    const rzp = new (window as any).Razorpay(options);
-    rzp.open();
+      const rzp = new (window as any).Razorpay(options);
+      
+      // Capture in-modal payment failures cleanly
+      rzp.on('payment.failed', function (resp: any) {
+        console.warn('[Checkout] Payment failed inside modal:', resp);
+        setIsCheckoutOpening(false);
+        const failMsg = resp.error?.description || resp.error?.reason || 'Payment could not be processed. Please try again with another payment method.';
+        setError(failMsg);
+      });
+
+      rzp.open();
+    } catch (openErr: any) {
+      console.error('Failed to open Razorpay modal:', openErr);
+      setError('Unable to launch payment modal. Please try again.');
+      setIsCheckoutOpening(false);
+    }
   };
 
   // Simulator Handlers
@@ -254,13 +323,6 @@ function PaymentContent() {
   const handleCancelPayment = () => {
     router.push('/register');
   };
-
-  // Trigger payment automatically when razorpay finishes loading and order data is ready (Live mode only)
-  useEffect(() => {
-    if (paymentData && razorpayLoaded && paymentData.payment_mode !== 'simulator') {
-      handlePayment();
-    }
-  }, [paymentData, razorpayLoaded]);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
@@ -437,17 +499,66 @@ function PaymentContent() {
               </div>
             )}
 
+            {/* Developer Test Simulator Controls (if in simulator mode) */}
+            {paymentData.payment_mode === 'simulator' && (
+              <div className="mb-6 p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Developer Test Mode (Simulator Active)</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  You can simulate successful or failed payment without debiting a real account:
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSimulatedSuccess}
+                    disabled={simulatorSubmitting}
+                    className="flex-1 py-2.5 px-3 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer text-center"
+                  >
+                    {simulatorSubmitting ? 'Processing...' : 'Simulate Success'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSimulatedFailure}
+                    disabled={simulatorSubmitting}
+                    className="flex-1 py-2.5 px-3 bg-red-600/80 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer text-center"
+                  >
+                    Simulate Failure
+                  </button>
+                </div>
+                {simulatorStatus === 'FAILED' && (
+                  <p className="text-[10px] text-red-400 font-semibold">Simulated failure recorded in database.</p>
+                )}
+              </div>
+            )}
+
             {/* Action buttons */}
             <button
               onClick={handlePayment}
-              disabled={!paymentData.razorpay_configured}
+              disabled={!paymentData.razorpay_configured || isCheckoutOpening || verifying}
               className={`w-full inline-flex justify-center items-center gap-2 px-8 py-3.5 font-bold rounded-xl shadow-lg text-xs uppercase tracking-wider text-white transition-all duration-200 ${
-                paymentData.razorpay_configured 
+                paymentData.razorpay_configured && !isCheckoutOpening && !verifying
                   ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 cursor-pointer shadow-purple-500/10 hover:shadow-purple-500/25' 
                   : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed shadow-none'
               }`}
             >
-              PAY ₹50 ONLINE
+              {isCheckoutOpening ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Opening Razorpay...
+                </>
+              ) : verifying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying Payment...
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-4 h-4" />
+                  PAY ₹{EVENT_CONFIG.registrationFee} ONLINE
+                </>
+              )}
             </button>
           </div>
         )}

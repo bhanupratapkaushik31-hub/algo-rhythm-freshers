@@ -29,17 +29,19 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // 2. Fetch payment record
-    const { data: payment, error: payError } = await supabaseAdmin
+    // 2. Fetch payment record safely without crashing on duplicate entries
+    const { data: payments, error: payError } = await supabaseAdmin
       .from('payments')
       .select('*')
       .eq('registration_id', registrationId)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
 
     if (payError) {
       console.error('Status API: DB error fetching payment:', payError);
       return NextResponse.json({ success: false, message: 'DB query failed' }, { status: 500 });
     }
+
+    const payment = payments?.[0];
 
     if (!payment) {
       return NextResponse.json({
@@ -49,16 +51,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Self-healing: If payment is marked PENDING in DB, check Razorpay directly
-    if (payment.payment_status === 'PENDING' && payment.razorpay_order_id) {
+    // Only check if it's a genuine Razorpay order ID (not placeholder or simulator)
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+    const isValidRazorpayOrderId = payment.razorpay_order_id && 
+      payment.razorpay_order_id.startsWith('order_') && 
+      !payment.razorpay_order_id.startsWith('order_pending_') && 
+      !payment.razorpay_order_id.startsWith('order_sim_') &&
+      !payment.razorpay_order_id.startsWith('order_mock_');
+
+    if (payment.payment_status === 'PENDING' && isValidRazorpayOrderId && keyId && keySecret) {
       try {
         const razorpay = new Razorpay({
-          key_id: process.env.RAZORPAY_KEY_ID || '',
-          key_secret: process.env.RAZORPAY_KEY_SECRET || '',
+          key_id: keyId,
+          key_secret: keySecret,
         });
 
         // Fetch payments for this specific order
         const rzpPayments = await razorpay.orders.fetchPayments(payment.razorpay_order_id);
         const capturedPay = rzpPayments.items?.find((p: any) => p.status === 'captured');
+
 
         if (capturedPay) {
           console.log(`[Status Self-Healing] Found captured payment ${capturedPay.id} for order ${payment.razorpay_order_id}. Healing DB state.`);
