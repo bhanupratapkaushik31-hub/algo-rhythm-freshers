@@ -53,20 +53,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       const timestamp = new Date().toISOString();
 
-      // 3. Insert check-in record
+      // 3. Insert check-in record using only existing schema columns
       const { error: insertErr } = await supabaseAdmin
         .from('entries')
         .insert({
           registration_id: id,
-          ticket_id: reg.ticket_id,
-          coordinator_id: admin.id,
           entry_status: 'ENTERED',
           scanned_by: `${admin.name || admin.email} (Admin Manual)`,
           scanner_device: 'Admin Dashboard',
           scanned_at: timestamp,
-          status: 'ENTERED',
-          entry_time: timestamp,
-          is_test: false
+          entry_time: timestamp
         });
 
       if (insertErr) {

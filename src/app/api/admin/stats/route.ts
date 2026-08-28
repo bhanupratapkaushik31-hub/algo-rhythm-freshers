@@ -61,27 +61,14 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .eq('email_status', 'FAILED');
 
-    // Entries Completed
+    // Entries Completed (Count only live check-ins where entry_status is ENTERED, excluding TEST_ENTERED)
     let entriesCompleted = 0;
-    let errEntries: any = null;
-    
-    const { count: liveEntriesCount, error: primaryEntriesErr } = await supabaseAdmin
+    const { count: liveEntriesCount, error: errEntries } = await supabaseAdmin
       .from('entries')
       .select('*', { count: 'exact', head: true })
-      .eq('is_test', false);
+      .eq('entry_status', 'ENTERED');
 
-    if (primaryEntriesErr) {
-      console.warn('Primary entries count query failed, running fallback:', primaryEntriesErr.message);
-      const { count: fallbackEntriesCount, error: fallbackEntriesErr } = await supabaseAdmin
-        .from('entries')
-        .select('*', { count: 'exact', head: true });
-        
-      if (fallbackEntriesErr) {
-        errEntries = fallbackEntriesErr;
-      } else {
-        entriesCompleted = fallbackEntriesCount || 0;
-      }
-    } else {
+    if (!errEntries) {
       entriesCompleted = liveEntriesCount || 0;
     }
 

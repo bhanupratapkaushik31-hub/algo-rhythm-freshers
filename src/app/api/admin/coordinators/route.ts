@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
       console.warn('Fetch entries with coordinator_id/is_test failed, trying legacy fallback:', entriesErr.message);
       const { data: entriesFallback, error: fallbackErr } = await supabaseAdmin
         .from('entries')
-        .select('scanned_by, entry_time');
+        .select('scanned_by, entry_time')
+        .eq('entry_status', 'ENTERED');
 
       if (fallbackErr) {
         console.error('Fetch entries fallback DB error:', fallbackErr);

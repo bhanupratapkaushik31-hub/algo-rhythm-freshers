@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       .from('entries')
       .select('*')
       .eq('registration_id', reg.id)
-      .eq('is_test', isTest)
+      .eq('entry_status', isTest ? 'TEST_ENTERED' : 'ENTERED')
       .maybeSingle();
 
     if (existingEntry) {
@@ -128,20 +128,16 @@ export async function POST(request: NextRequest) {
 
     const timestamp = new Date().toISOString();
 
-    // 6. Atomically insert entry record
+    // 6. Atomically insert entry record using only existing schema columns
     const { data: newEntry, error: insertErr } = await supabaseAdmin
       .from('entries')
       .insert({
         registration_id: reg.id,
-        ticket_id: reg.ticket_id,
-        coordinator_id: admin.id,
-        entry_status: 'ENTERED',
+        entry_status: isTest ? 'TEST_ENTERED' : 'ENTERED',
         scanned_by: admin.name || admin.email || 'Admin Staff',
         scanner_device: scanner_device || (isTest ? 'Admin Test Console' : 'Mobile QR Terminal'),
         scanned_at: timestamp,
-        status: 'ENTERED',
-        entry_time: timestamp,
-        is_test: isTest
+        entry_time: timestamp
       })
       .select()
       .single();

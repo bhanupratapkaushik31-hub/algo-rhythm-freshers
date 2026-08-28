@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
       const { data: fallbackEntries, error: fallbackErr } = await supabaseAdmin
         .from('entries')
         .select('*')
-        .or(`coordinator_id.eq.${admin.id},scanned_by.eq.${admin.email}`)
+        .ilike('scanned_by', `%${admin.email}%`)
+        .eq('entry_status', isTestParam ? 'TEST_ENTERED' : 'ENTERED')
         .order('entry_time', { ascending: false });
 
       if (fallbackErr) {
