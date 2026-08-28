@@ -123,7 +123,10 @@ export default function Register() {
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
+    console.log('[Register Flow] 1. Checkout button clicked, form data:', data);
+    
     if (!photoBase64) {
+      console.warn('[Register Flow] Photo base64 is missing');
       setPhotoError('Please upload your photo before checking out.');
       return;
     }
@@ -133,7 +136,7 @@ export default function Register() {
     setPhotoUploading(true);
 
     try {
-      // 1. Upload photo to secure storage bucket
+      console.log('[Register Flow] 2. Uploading photo to storage bucket...');
       const uploadResponse = await fetch('/api/register/upload-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,10 +147,13 @@ export default function Register() {
       });
 
       const uploadRes = await uploadResponse.json();
+      console.log('[Register Flow] 3. Photo upload response:', uploadRes);
       setPhotoUploading(false);
 
       if (!uploadResponse.ok || !uploadRes.success) {
-        setServerError(uploadRes.error?.message || 'Failed to upload photo. Please try again.');
+        const msg = uploadRes.error?.message || 'Failed to upload photo. Please try again.';
+        console.error('[Register Flow] Photo upload failed:', msg);
+        setServerError(msg);
         setSubmitting(false);
         return;
       }
@@ -155,6 +161,7 @@ export default function Register() {
       const photoPath = uploadRes.data.photo_path;
 
       // 2. Submit registration
+      console.log('[Register Flow] 4. Submitting registration data...');
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,22 +172,38 @@ export default function Register() {
       });
 
       const res = await response.json();
+      console.log('[Register Flow] 5. Registration API response:', res);
 
       if (!response.ok || !res.success) {
-        setServerError(res.error?.message || 'Something went wrong. Please try again.');
+        const msg = res.error?.message || 'Something went wrong. Please try again.';
+        console.error('[Register Flow] Registration API returned error:', msg);
+        setServerError(msg);
         setSubmitting(false);
         return;
       }
 
       // Success: Redirect to payment page with registration ID
       const registrationId = res.data.id;
-      router.push(`/payment?id=${registrationId}`);
+      console.log('[Register Flow] 6. Registration successful! Redirecting to payment with ID:', registrationId);
+      window.location.href = `/payment?id=${registrationId}`;
 
-    } catch (err) {
-      console.error('Registration submission error:', err);
-      setServerError('Network error. Please check your internet connection.');
+    } catch (err: any) {
+      console.error('[Register Flow] Network or runtime exception:', err);
+      setServerError(err.message || 'Network error. Please check your internet connection.');
       setSubmitting(false);
       setPhotoUploading(false);
+    }
+  };
+
+  const onInvalid = (formErrors: any) => {
+    console.warn('[Register Flow] Validation blocked submission with errors:', formErrors);
+    const firstKey = Object.keys(formErrors)[0];
+    if (firstKey) {
+      const el = document.querySelector(`[name="${firstKey}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (el as HTMLElement).focus();
+      }
     }
   };
 
@@ -246,7 +269,7 @@ export default function Register() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit, (errs) => console.warn('[Register] Form validation errors:', errs))} className="space-y-6">
+            <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
               
               {/* Form Validation Alert */}
               {Object.keys(errors).length > 0 && !serverError && (
@@ -401,7 +424,6 @@ export default function Register() {
                           accept="image/png, image/jpeg, image/jpg"
                           onChange={handlePhotoChange}
                           className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                          required
                         />
                         <div className="p-3 bg-purple-500/10 text-purple-400 rounded-lg">
                           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -450,26 +472,53 @@ export default function Register() {
 
               </div>
 
-              {/* Submit Button */}
-              <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row gap-4 justify-between items-center">
-                <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 disabled:from-purple-800/50 disabled:to-pink-800/50 text-white font-bold rounded-xl shadow-lg shadow-purple-500/10 hover:shadow-purple-500/25 transition-all outline-none text-xs uppercase tracking-wider cursor-pointer"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating Registration...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Proceed to Checkout
-                    </>
-                  )}
-                </button>
+              {/* Action Area with Error Feedback Above Button */}
+              <div className="pt-4 border-t border-white/5 space-y-3">
+                {serverError && (
+                  <div className="w-full p-3.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-200 text-xs flex gap-2.5 items-center">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                    <div>
+                      <strong className="font-bold mr-1">Error:</strong>
+                      <span>{serverError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {Object.keys(errors).length > 0 && (
+                  <div className="w-full p-3.5 bg-amber-950/40 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex gap-2.5 items-start">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <strong className="font-bold block mb-1">Please complete required fields before checkout:</strong>
+                      <span className="text-[11px] text-amber-300">
+                        {Object.entries(errors).map(([k, v]) => `${k.replace('_', ' ')}: ${v?.message || 'Required'}`).join(' • ')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+                  <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    onClick={() => {
+                      console.log('[Register Flow] Proceed to Checkout button clicked');
+                    }}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 disabled:from-purple-800/50 disabled:to-pink-800/50 text-white font-bold rounded-xl shadow-lg shadow-purple-500/10 hover:shadow-purple-500/25 transition-all outline-none text-xs uppercase tracking-wider cursor-pointer"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Creating Registration...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Proceed to Checkout
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
             </form>
