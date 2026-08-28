@@ -22,13 +22,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Role check: Only super_admin or admin can enable/use TEST MODE
+    // Role check: Only super_admin can enable/use TEST MODE
     const isTest = !!is_test_mode;
     if (isTest) {
-      if (admin.role !== 'super_admin' && admin.role !== 'admin') {
+      if (admin.role !== 'super_admin') {
         return NextResponse.json({
           success: false,
-          error: { code: 'FORBIDDEN', message: 'Only administrators can enable and scan in Test Mode.' }
+          error: { code: 'FORBIDDEN', message: 'Only Super Administrators can enable and scan in Test Mode.' }
         }, { status: 403 });
       }
     }

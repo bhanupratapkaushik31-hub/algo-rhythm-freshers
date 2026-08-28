@@ -44,6 +44,13 @@ export default function AdminScanner() {
   // Test Mode configuration
   const [isTestMode, setIsTestMode] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  
+  const isTestModeRef = useRef(false);
+
+  // Sync ref to prevent stale closures in camera callbacks
+  useEffect(() => {
+    isTestModeRef.current = isTestMode;
+  }, [isTestMode]);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const scannerId = 'qr-reader-viewport';
@@ -64,7 +71,7 @@ export default function AdminScanner() {
             const res = await response.json();
             if (res.success && res.data) {
               const role = res.data.role;
-              if (role === 'super_admin' || role === 'admin') {
+              if (role === 'super_admin') {
                 setIsAdminUser(true);
               }
             }
@@ -232,8 +239,8 @@ export default function AdminScanner() {
         },
         body: JSON.stringify({ 
           ticket_token: token,
-          is_test_mode: isTestMode,
-          scanner_device: isTestMode ? 'Admin Test Terminal' : 'Mobile Admin Scanner'
+          is_test_mode: isTestModeRef.current,
+          scanner_device: isTestModeRef.current ? 'Admin Test Terminal' : 'Mobile Admin Scanner'
         }),
       });
 
