@@ -62,10 +62,28 @@ export async function GET(request: NextRequest) {
       .eq('email_status', 'FAILED');
 
     // Entries Completed
-    const { count: entriesCompleted, error: errEntries } = await supabaseAdmin
+    let entriesCompleted = 0;
+    let errEntries: any = null;
+    
+    const { count: liveEntriesCount, error: primaryEntriesErr } = await supabaseAdmin
       .from('entries')
       .select('*', { count: 'exact', head: true })
       .eq('is_test', false);
+
+    if (primaryEntriesErr) {
+      console.warn('Primary entries count query failed, running fallback:', primaryEntriesErr.message);
+      const { count: fallbackEntriesCount, error: fallbackEntriesErr } = await supabaseAdmin
+        .from('entries')
+        .select('*', { count: 'exact', head: true });
+        
+      if (fallbackEntriesErr) {
+        errEntries = fallbackEntriesErr;
+      } else {
+        entriesCompleted = fallbackEntriesCount || 0;
+      }
+    } else {
+      entriesCompleted = liveEntriesCount || 0;
+    }
 
     // Total Collection (Revenue calculation from successful payments)
     const { data: paymentsData, error: err4 } = await supabaseAdmin
@@ -78,7 +96,10 @@ export async function GET(request: NextRequest) {
       console.error('Stats compile DB errors:', { err1, err2, err3, errPayments, errModelingYes, errModelingNo, errEmailsSent, errEmailsFailed, errEntries, err4 });
       return NextResponse.json({
         success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to compile statistics.' }
+        error: { 
+          code: 'DATABASE_ERROR', 
+          message: `Failed to compile statistics. (Detail: ${errEntries?.message || 'Database error'}). Ensure you have run the latest SQL migrations in your Supabase SQL Editor.` 
+        }
       }, { status: 500 });
     }
 

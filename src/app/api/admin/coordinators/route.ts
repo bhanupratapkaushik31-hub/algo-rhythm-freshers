@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 3. Fetch entries to compute metrics (with fallback for missing coordinator_id column)
+    // 3. Fetch entries to compute metrics (with fallback for missing coordinator_id/is_test columns)
     let entries: any[] = [];
     const { data: entriesWithCoord, error: entriesErr } = await supabaseAdmin
       .from('entries')
@@ -35,11 +35,10 @@ export async function GET(request: NextRequest) {
       .eq('is_test', false);
 
     if (entriesErr) {
-      console.warn('Fetch entries with coordinator_id failed, trying fallback:', entriesErr.message);
+      console.warn('Fetch entries with coordinator_id/is_test failed, trying legacy fallback:', entriesErr.message);
       const { data: entriesFallback, error: fallbackErr } = await supabaseAdmin
         .from('entries')
-        .select('scanned_by, entry_time')
-        .eq('is_test', false);
+        .select('scanned_by, entry_time');
 
       if (fallbackErr) {
         console.error('Fetch entries fallback DB error:', fallbackErr);

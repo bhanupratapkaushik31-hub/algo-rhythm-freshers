@@ -14,12 +14,32 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Query entries scanned by this coordinator (matching by ID or email)
-    const { data: entries, error: entryErr } = await supabaseAdmin
+    let entries: any[] = [];
+    let entryErr: any = null;
+
+    const { data: primaryEntries, error: primaryErr } = await supabaseAdmin
       .from('entries')
       .select('*')
       .or(`coordinator_id.eq.${admin.id},scanned_by.eq.${admin.email}`)
       .eq('is_test', false)
       .order('entry_time', { ascending: false });
+
+    if (primaryErr) {
+      console.warn('Fetch coordinator stats with is_test failed, trying legacy fallback:', primaryErr.message);
+      const { data: fallbackEntries, error: fallbackErr } = await supabaseAdmin
+        .from('entries')
+        .select('*')
+        .or(`coordinator_id.eq.${admin.id},scanned_by.eq.${admin.email}`)
+        .order('entry_time', { ascending: false });
+
+      if (fallbackErr) {
+        entryErr = fallbackErr;
+      } else {
+        entries = fallbackEntries || [];
+      }
+    } else {
+      entries = primaryEntries || [];
+    }
 
     if (entryErr) {
       console.error('Fetch coordinator scans DB error:', entryErr);
