@@ -58,6 +58,7 @@ export default function AdminRegistrations() {
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
   const [pages, setPages] = useState(1);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Search & Filter States
   const [search, setSearch] = useState('');
@@ -179,11 +180,14 @@ export default function AdminRegistrations() {
         setList(res.data.registrations);
         setTotal(res.data.total);
         setPages(res.data.pages);
+        setErrorMsg(null);
       } else {
         console.error('Fetch error:', res.error);
+        setErrorMsg(res.error?.message || 'Failed to load registrations.');
       }
     } catch (err) {
       console.error('Failed to load registrations:', err);
+      setErrorMsg('Failed to load registrations. Connection failed.');
     } finally {
       setLoading(false);
     }
@@ -324,6 +328,13 @@ export default function AdminRegistrations() {
           Export CSV
         </button>
       </div>
+
+      {errorMsg && (
+        <div className="mb-6 p-4 bg-red-950/20 border border-red-500/20 text-red-200 text-xs rounded-2xl flex gap-3 items-start">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
 
       {/* Filter and Search controls */}
       <div className="glass-card rounded-2xl p-6 mb-8 space-y-6">

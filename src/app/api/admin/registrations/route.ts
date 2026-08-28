@@ -82,13 +82,83 @@ export async function GET(request: NextRequest) {
     const to = from + limit - 1;
     query = query.range(from, to);
 
-    const { data: list, count, error } = await query;
+    let list = null;
+    let count = null;
+    let error = null;
+
+    const primaryResult = await query;
+    if (primaryResult.error) {
+      const errMsg = primaryResult.error.message;
+      const isLegacyView = errMsg.includes('payment_status') || errMsg.includes('refund_status') || errMsg.includes('is_test') || errMsg.includes('entry_is_test');
+      
+      if (isLegacyView) {
+        console.warn('Primary registrations query failed due to legacy view columns, running fallback query:', errMsg);
+        // Build fallback query using legacy columns only
+        let fallbackQuery = supabaseAdmin
+          .from('registrations_with_details')
+          .select('*', { count: 'exact' });
+
+        if (search) {
+          fallbackQuery = fallbackQuery.or(
+            `full_name.ilike.%${search}%,` +
+            `registration_number.ilike.%${search}%,` +
+            `ticket_id.ilike.%${search}%,` +
+            `email.ilike.%${search}%,` +
+            `phone.ilike.%${search}%`
+          );
+        }
+
+        if (year !== 'All') {
+          fallbackQuery = fallbackQuery.eq('year', year);
+        }
+
+        if (modeling !== 'All') {
+          fallbackQuery = fallbackQuery.eq('modeling', modeling);
+        }
+
+        if (paymentStatus !== 'All') {
+          if (paymentStatus === 'SUCCESS') {
+            fallbackQuery = fallbackQuery.eq('registration_status', 'PAID');
+          } else if (paymentStatus === 'PENDING') {
+            fallbackQuery = fallbackQuery.eq('registration_status', 'PENDING');
+          } else if (paymentStatus === 'FAILED') {
+            fallbackQuery = fallbackQuery.eq('registration_status', 'FAILED');
+          } else {
+            fallbackQuery = fallbackQuery.eq('registration_status', paymentStatus);
+          }
+        }
+
+        if (entryStatus !== 'All') {
+          fallbackQuery = fallbackQuery.eq('entry_status', entryStatus);
+        }
+
+        if (school) {
+          fallbackQuery = fallbackQuery.ilike('school_name', `%${school}%`);
+        }
+
+        fallbackQuery = fallbackQuery.order(sortBy, { ascending: sortOrder === 'asc' });
+        fallbackQuery = fallbackQuery.range(from, to);
+
+        const fallbackResult = await fallbackQuery;
+        list = fallbackResult.data;
+        count = fallbackResult.count;
+        error = fallbackResult.error;
+      } else {
+        error = primaryResult.error;
+      }
+    } else {
+      list = primaryResult.data;
+      count = primaryResult.count;
+    }
 
     if (error) {
       console.error('Fetch registrations list DB error:', error);
       return NextResponse.json({
         success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to fetch registrations.' }
+        error: { 
+          code: 'DATABASE_ERROR', 
+          message: `Failed to fetch registrations. (Detail: ${error.message}). Ensure you have run the latest SQL migrations in your Supabase SQL Editor.` 
+        }
       }, { status: 500 });
     }
 
