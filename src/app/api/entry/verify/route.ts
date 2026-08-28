@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
         ticket_id: reg.ticket_id,
         coordinator_id: admin.id,
         entry_status: 'ENTERED',
-        scanned_by: admin.name || admin.email,
+        scanned_by: admin.name || admin.email || 'Admin Staff',
         scanner_device: scanner_device || (isTest ? 'Admin Test Console' : 'Mobile QR Terminal'),
         scanned_at: timestamp,
         status: 'ENTERED',
@@ -159,16 +159,24 @@ export async function POST(request: NextRequest) {
             is_test: isTest,
             entry_details: {
               entry_time: timestamp,
-              scanned_by: admin.name || admin.email,
+              scanned_by: admin.name || admin.email || 'Admin Staff',
               scanner_device: scanner_device || 'Mobile QR Terminal'
             }
           }
         });
       }
 
+      const isSchemaError = insertErr.message?.includes('column') || insertErr.code === 'PGRST204';
+      const diagnosticMsg = isSchemaError 
+        ? `Database schema out-of-sync: ${insertErr.message}. Ensure you have executed the latest SQL migrations in your Supabase SQL Editor.`
+        : `Database insertion failed: ${insertErr.message} (Code: ${insertErr.code}).`;
+
       return NextResponse.json({
         success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to record entry check-in.' }
+        error: { 
+          code: 'DATABASE_ERROR', 
+          message: diagnosticMsg
+        }
       }, { status: 500 });
     }
 

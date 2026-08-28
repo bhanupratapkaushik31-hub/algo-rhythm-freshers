@@ -77,9 +77,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }, { status: 400 });
         }
         console.error('Manual checkin error:', insertErr);
+        
+        const isSchemaError = insertErr.message?.includes('column') || insertErr.code === 'PGRST204';
+        const diagnosticMsg = isSchemaError 
+          ? `Database schema out-of-sync: ${insertErr.message}. Ensure you have executed the latest SQL migrations in your Supabase SQL Editor.`
+          : `Failed to insert entry log: ${insertErr.message} (Code: ${insertErr.code}).`;
+
         return NextResponse.json({
           success: false,
-          error: { code: 'DATABASE_ERROR', message: 'Failed to insert entry log.' }
+          error: { code: 'DATABASE_ERROR', message: diagnosticMsg }
         }, { status: 500 });
       }
 
