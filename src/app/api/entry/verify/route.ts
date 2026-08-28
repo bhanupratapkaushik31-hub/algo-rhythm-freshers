@@ -33,12 +33,47 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Fetch registration matching the secure token
-    const { data: reg, error: regErr } = await supabaseAdmin
+    // 2. Fetch registration matching the secure token, ticket ID, or registration ID
+    let cleanedToken = String(ticket_token).trim();
+    if (cleanedToken.includes('/ticket/')) {
+      cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0] || cleanedToken;
+    }
+
+    let { data: reg, error: regErr } = await supabaseAdmin
       .from('registrations')
       .select('*')
-      .eq('ticket_token', ticket_token)
+      .eq('ticket_token', cleanedToken)
       .maybeSingle();
+
+    if (!reg) {
+      // Also try by ticket_id (e.g. ALG26-CSE-0001 or AR-1027)
+      const { data: byTicketId } = await supabaseAdmin
+        .from('registrations')
+        .select('*')
+        .eq('ticket_id', cleanedToken)
+        .maybeSingle();
+      if (byTicketId) reg = byTicketId;
+    }
+
+    if (!reg) {
+      // Also try by registration_number
+      const { data: byRegNo } = await supabaseAdmin
+        .from('registrations')
+        .select('*')
+        .eq('registration_number', cleanedToken)
+        .maybeSingle();
+      if (byRegNo) reg = byRegNo;
+    }
+
+    if (!reg) {
+      // Also try by registration id (UUID)
+      const { data: byId } = await supabaseAdmin
+        .from('registrations')
+        .select('*')
+        .eq('id', cleanedToken)
+        .maybeSingle();
+      if (byId) reg = byId;
+    }
 
     if (regErr) {
       console.error('Verify entry lookup error:', regErr);
@@ -101,16 +136,21 @@ export async function POST(request: NextRequest) {
       year: reg.year,
       school_name: reg.school_name,
       modeling: reg.modeling,
-      photo_url: photoUrl
+      photo_url: photoUrl,
+      phone: reg.phone,
+      email: reg.email
     };
 
     // 4. Check for duplicate scan matching the current mode (Test vs. Live)
-    const { data: existingEntry, error: entryErr } = await supabaseAdmin
+    // Production database has legacy status values in entry_status, so query all entries for registration
+    const { data: entriesForReg } = await supabaseAdmin
       .from('entries')
       .select('*')
-      .eq('registration_id', reg.id)
-      .eq('entry_status', isTest ? 'TEST_ENTERED' : 'ENTERED')
-      .maybeSingle();
+      .eq('registration_id', reg.id);
+
+    const existingEntry = isTest
+      ? entriesForReg?.find((e: any) => e.is_test === true || e.entry_status === 'TEST_ENTERED')
+      : entriesForReg?.find((e: any) => e.is_test !== true && e.entry_status !== 'TEST_ENTERED');
 
     if (existingEntry) {
       // Get coordinator details who scanned it originally
@@ -118,6 +158,8 @@ export async function POST(request: NextRequest) {
       if (existingEntry.scanned_by) {
         originalScannedBy = existingEntry.scanned_by;
       }
+
+      const prevTime = existingEntry.entry_time || existingEntry.scanned_at || null;
       
       return NextResponse.json({
         success: true,
@@ -125,10 +167,14 @@ export async function POST(request: NextRequest) {
           status: 'ALREADY_ENTERED',
           student: formattedStudent,
           is_test: isTest,
+          payment_status: reg.registration_status,
+          entry_status: existingEntry.entry_status || 'ENTERED',
+          previous_entry_time: prevTime,
           entry_details: {
-            entry_time: existingEntry.entry_time || existingEntry.scanned_at,
+            entry_time: prevTime,
             scanned_by: originalScannedBy,
-            scanner_device: existingEntry.scanner_device || 'Web Browser'
+            scanner_device: existingEntry.scanner_device || 'Web Browser',
+            is_test: existingEntry.is_test
           }
         }
       });
@@ -156,6 +202,9 @@ export async function POST(request: NextRequest) {
       data: {
         status: 'PENDING_CONFIRMATION',
         student: formattedStudent,
+        payment_status: reg.registration_status,
+        entry_status: 'NOT_ENTERED',
+        previous_entry_time: null,
         is_test: isTest
       }
     });

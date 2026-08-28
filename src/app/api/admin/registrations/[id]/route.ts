@@ -41,9 +41,35 @@ export async function GET(
       }, { status: 404 });
     }
 
+    // 3. Query entry logs for this registration (ENTRY and RE_ENTRY history)
+    const { data: logs, error: logsErr } = await supabaseAdmin
+      .from('entry_logs')
+      .select('*')
+      .eq('registration_id', id)
+      .order('scanned_at', { ascending: false });
+
+    if (logsErr) {
+      console.warn('Fetch entry_logs error:', logsErr);
+    }
+
+    // 4. Generate signed URL for student photo if present
+    let photoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a855f7'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>";
+    if (reg.photo_path && !reg.photo_path.startsWith('mock-photos/')) {
+      const { data: signedData } = await supabaseAdmin.storage
+        .from('student-photos')
+        .createSignedUrl(reg.photo_path, 3600);
+      if (signedData?.signedUrl) {
+        photoUrl = signedData.signedUrl;
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: reg
+      data: {
+        ...reg,
+        photo_url: photoUrl,
+        entry_logs: logs || []
+      }
     });
 
   } catch (err: any) {

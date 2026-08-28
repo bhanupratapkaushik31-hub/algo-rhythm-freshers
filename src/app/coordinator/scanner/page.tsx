@@ -461,7 +461,8 @@ export default function CoordinatorScanner() {
 
               <div>
                 <h3 className="text-xl font-black font-outfit text-white tracking-tight leading-tight">{student.full_name}</h3>
-                <p className="text-slate-300 text-xs font-bold mt-1.5 uppercase tracking-wider">{student.registration_number}</p>
+                <p className="text-purple-400 text-xs font-bold mt-1 font-mono">Ticket ID: {student.ticket_id || 'N/A'}</p>
+                <p className="text-slate-300 text-xs font-bold mt-0.5 uppercase tracking-wider">{student.registration_number}</p>
                 <p className="text-slate-500 text-[10px] uppercase tracking-wider mt-0.5">{student.year} &bull; {student.school_name}</p>
               </div>
 
@@ -471,7 +472,7 @@ export default function CoordinatorScanner() {
                   <span className="font-extrabold text-emerald-400">✓ PAID</span>
                 </div>
                 <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-500 block">Entry Status</span>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 block">Current Entry Status</span>
                   <span className="font-extrabold text-yellow-500">NOT ENTERED</span>
                 </div>
               </div>
@@ -522,7 +523,8 @@ export default function CoordinatorScanner() {
 
               <div>
                 <h3 className="text-xl font-black font-outfit text-white mt-1">{student.full_name}</h3>
-                <p className="text-slate-300 text-xs font-bold mt-1.5 uppercase tracking-wider">{student.registration_number}</p>
+                <p className="text-purple-300 text-xs font-bold mt-1 font-mono">Ticket ID: {student.ticket_id}</p>
+                <p className="text-slate-300 text-xs font-bold mt-0.5 uppercase tracking-wider">{student.registration_number}</p>
                 <p className="text-slate-400 text-[10px] mt-0.5">{student.year} &bull; {student.school_name}</p>
               </div>
 
@@ -542,11 +544,11 @@ export default function CoordinatorScanner() {
               
               <span className="text-[10px] uppercase tracking-wider text-red-400 font-extrabold bg-red-500/10 px-3.5 py-1 rounded-full border border-red-500/10 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-red-400" />
-                ⚠️ ALREADY CHECKED IN
+                ALREADY ENTERED
               </span>
 
               {/* STUDENT PHOTO */}
-              <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-red-500/20 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
+              <div className="w-44 h-44 rounded-2xl overflow-hidden border-2 border-red-500/20 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
                 <img 
                   src={student.photo_url} 
                   alt="Scanned Student Attendee" 
@@ -555,24 +557,36 @@ export default function CoordinatorScanner() {
               </div>
 
               <div>
-                <h3 className="text-lg font-bold font-outfit text-white tracking-tight leading-tight">{student.full_name}</h3>
-                <p className="text-slate-400 text-xs mt-1 font-semibold uppercase tracking-wider">{student.registration_number}</p>
+                <h3 className="text-xl font-bold font-outfit text-white tracking-tight leading-tight">{student.full_name}</h3>
+                <p className="text-amber-400 text-xs font-bold mt-1 font-mono">Ticket ID: {student.ticket_id}</p>
+                <p className="text-slate-400 text-xs mt-0.5 font-semibold uppercase tracking-wider">{student.registration_number}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 w-full text-xs">
+                <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 block">Payment Status</span>
+                  <span className="font-extrabold text-emerald-400">✓ PAID</span>
+                </div>
+                <div className="p-2.5 bg-red-500/10 rounded-xl border border-red-500/20 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-red-400 block">Current Status</span>
+                  <span className="font-extrabold text-red-300">ALREADY ENTERED</span>
+                </div>
               </div>
 
               <div className="space-y-2 text-xs bg-red-950/15 border border-red-500/15 p-4 rounded-xl text-left text-red-200 w-full animate-fade-in">
                 <div className="flex justify-between border-b border-red-500/15 pb-1 mb-1 font-bold text-[9px] uppercase tracking-wider">
-                  <span>Original Entry Check-In Record</span>
+                  <span>Previous Entry Record</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-red-400/70">Check-in time:</span>
-                  <span className="font-semibold">{new Date(entryDetails.entry_time).toLocaleTimeString()}</span>
+                  <span className="text-red-400/70">Previous entry time:</span>
+                  <span className="font-semibold">{new Date(entryDetails.entry_time).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-red-400/70">Scanned By:</span>
                   <span className="font-semibold truncate max-w-[150px]">{entryDetails.scanned_by}</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-red-400/70">Device / Portal:</span>
+                  <span className="text-red-400/70">Scanner device:</span>
                   <span className="font-semibold text-right truncate max-w-[150px]">{entryDetails.scanner_device}</span>
                 </div>
               </div>

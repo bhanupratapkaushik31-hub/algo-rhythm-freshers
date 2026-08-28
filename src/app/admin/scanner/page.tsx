@@ -30,6 +30,7 @@ interface ScannedStudent {
   school_name: string;
   modeling: 'Yes' | 'No';
   registration_status: string;
+  photo_url?: string;
 }
 
 export default function AdminScanner() {
@@ -275,13 +276,13 @@ export default function AdminScanner() {
         triggerHaptic([150, 100, 150]);
         playBeep('already');
         setScanState('ALREADY_ENTERED');
-        // Auto reset scanner on duplicate after 4 seconds
-        autoResetTimeoutRef.current = setTimeout(resetScanner, 4000);
-      } else if (resultData.status === 'VALID' || resultData.status === 'MARKED') {
+        // Do not auto-reset: allow coordinator to inspect photo and allow re-entry
+      } else if (resultData.status === 'PENDING_CONFIRMATION' || resultData.status === 'VALID') {
+        setScanState('VALID');
+      } else if (resultData.status === 'MARKED') {
         triggerHaptic([80, 50, 80]);
         playBeep('success-marked');
         setScanState('MARKED');
-        // Auto reset scanner on successful marked check-in after 3.5 seconds
         autoResetTimeoutRef.current = setTimeout(resetScanner, 3500);
       }
 
@@ -295,8 +296,8 @@ export default function AdminScanner() {
     }
   };
 
-  // 5. Check-in Student manually (Mark Entry)
-  const handleMarkEntry = async () => {
+  // 5. Check-in Student manually (Mark Entry or Re-Entry)
+  const handleMarkEntry = async (actionType: 'ENTRY' | 'RE_ENTRY' = 'ENTRY') => {
     if (!student) return;
     setMarkingEntry(true);
     clearAutoReset();
@@ -310,7 +311,12 @@ export default function AdminScanner() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
-        body: JSON.stringify({ registration_id: student.id }),
+        body: JSON.stringify({ 
+          registration_id: student.id,
+          action: actionType,
+          is_test: isTestModeRef.current,
+          scanner_device: isTestModeRef.current ? 'Admin Test Terminal' : 'Admin Scanner'
+        }),
       });
 
       const res = await response.json();
@@ -321,12 +327,12 @@ export default function AdminScanner() {
         setScanState('MARKED');
         autoResetTimeoutRef.current = setTimeout(resetScanner, 3500);
       } else {
-        alert(res.error?.message || 'Failed to check in student.');
+        alert(res.error?.message || 'Failed to process entry.');
       }
 
     } catch (err) {
       console.error(err);
-      alert('Failed to check in student due to connection errors.');
+      alert('Failed to process entry due to connection errors.');
     } finally {
       setMarkingEntry(false);
     }
@@ -466,7 +472,20 @@ export default function AdminScanner() {
                 <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/10">
                   ✓ VALID TICKET
                 </span>
-                <h3 className="text-2xl font-black font-outfit text-white mt-4">{student.full_name}</h3>
+                
+                {/* STUDENT PHOTO */}
+                {student.photo_url && (
+                  <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg mx-auto my-3">
+                    <img 
+                      src={student.photo_url} 
+                      alt="Scanned Student Attendee" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                <h3 className="text-2xl font-black font-outfit text-white mt-2">{student.full_name}</h3>
+                <p className="text-purple-400 text-xs font-bold font-mono mt-1">Ticket ID: {student.ticket_id}</p>
                 <p className="text-slate-400 text-xs mt-0.5">{student.registration_number}</p>
               </div>
 
@@ -485,7 +504,7 @@ export default function AdminScanner() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Ticket ID:</span>
-                  <span className="font-bold text-amber-500">{student.ticket_id}</span>
+                  <span className="font-bold text-amber-500 font-mono">{student.ticket_id}</span>
                 </div>
               </div>
 
@@ -497,12 +516,12 @@ export default function AdminScanner() {
                   Cancel Scan
                 </button>
                 <button
-                  onClick={handleMarkEntry}
+                  onClick={() => handleMarkEntry('ENTRY')}
                   disabled={markingEntry}
                   className="flex-1 inline-flex justify-center items-center gap-1.5 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-lg shadow-emerald-500/10"
                 >
                   {markingEntry ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-                  Mark Entry
+                  Verify & Mark Entry
                 </button>
               </div>
             </div>
@@ -521,7 +540,18 @@ export default function AdminScanner() {
                 <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold bg-emerald-500/10 px-3.5 py-1 rounded-full border border-emerald-500/10">
                   {isTestMode ? '✓ TEST CHECK-IN' : '✓ ENTRY MARKED'}
                 </span>
-                <h3 className="text-2xl font-black font-outfit text-white mt-4">{student.full_name}</h3>
+
+                {student.photo_url && (
+                  <div className="w-28 h-28 rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg mx-auto my-3">
+                    <img 
+                      src={student.photo_url} 
+                      alt="Scanned Student Attendee" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                <h3 className="text-2xl font-black font-outfit text-white mt-2">{student.full_name}</h3>
                 <p className="text-purple-300 text-xs font-semibold mt-1">
                   {isTestMode ? 'TEST CHECK-IN SUCCESSFUL 🧪' : 'Welcome to ALGO-RHYTHM 2K26 🎉'}
                 </p>
@@ -553,7 +583,20 @@ export default function AdminScanner() {
                 <span className="text-[10px] uppercase tracking-wider text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded-full border border-red-500/10">
                   {entryDetails.is_test ? '⚠️ ALREADY TEST CHECKED-IN' : '⚠️ ALREADY ENTERED'}
                 </span>
-                <h3 className="text-xl font-bold font-outfit text-white mt-4">{student.full_name}</h3>
+
+                {/* STUDENT PHOTO */}
+                {student.photo_url && (
+                  <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-red-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg mx-auto my-3">
+                    <img 
+                      src={student.photo_url} 
+                      alt="Scanned Student Attendee" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                <h3 className="text-xl font-bold font-outfit text-white mt-2">{student.full_name}</h3>
+                <p className="text-amber-400 text-xs font-bold font-mono mt-1">Ticket ID: {student.ticket_id}</p>
                 <p className="text-slate-400 text-xs mt-0.5">{student.registration_number} &bull; {student.year}</p>
               </div>
 
@@ -562,7 +605,7 @@ export default function AdminScanner() {
                   Check-in log details
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-red-400/70">Check-in time:</span>
+                  <span className="text-red-400/70">Previous entry time:</span>
                   <span className="font-semibold">
                     {entryDetails.entry_time ? new Date(entryDetails.entry_time).toLocaleString() : 'N/A'}
                   </span>
@@ -579,17 +622,25 @@ export default function AdminScanner() {
 
               <p className="text-[10px] text-slate-500 leading-normal max-w-xs mx-auto">
                 {entryDetails.is_test 
-                  ? 'This ticket was already test checked-in. Duplicate test records are blocked.'
-                  : 'This ticket was already checked-in and cannot be reused. Duplicate entry check-in blocked.'
+                  ? 'This ticket was already test checked-in. Review attendee identity to allow re-entry.'
+                  : 'This ticket was already checked-in. Review attendee identity before approving re-entry.'
                 }
               </p>
 
-              <div className="pt-2">
+              <div className="pt-2 grid grid-cols-2 gap-3">
                 <button
                   onClick={resetScanner}
-                  className="w-full px-6 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer"
+                  disabled={markingEntry}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer"
                 >
-                  Scan Next Ticket
+                  Dismiss / Next
+                </button>
+                <button
+                  onClick={() => handleMarkEntry('RE_ENTRY')}
+                  disabled={markingEntry}
+                  className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-lg shadow-amber-500/10 flex items-center justify-center gap-1.5"
+                >
+                  {markingEntry ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Allow Re-Entry'}
                 </button>
               </div>
             </div>

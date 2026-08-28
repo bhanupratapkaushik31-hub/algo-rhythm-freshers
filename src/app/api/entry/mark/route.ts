@@ -5,7 +5,7 @@ import { verifyAdminAuth } from '@/lib/adminAuth';
 export async function POST(request: NextRequest) {
   try {
     // 1. Verify administrative access
-    const admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner']);
+    const admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner', 'coordinator']);
     if (!admin) {
       return NextResponse.json({
         success: false,
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
           registration_id: registration_id,
           ticket_id: reg.ticket_id,
           coordinator_id: admin.id,
-          entry_status: isTest ? 'TEST_ENTERED' : 'ENTERED',
+          entry_status: 'ENTERED',
           scanned_by: admin.name || admin.email || 'Admin Staff',
           scanner_device: scanner_device || 'Web Browser',
           scanned_at: timestamp,

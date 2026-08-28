@@ -216,7 +216,9 @@ export function mockListRegistrations(params: any) {
       entry_scanned_by: entry ? entry.scanned_by : null,
       razorpay_payment_id: payment ? (payment.razorpay_payment_id || payment.payment_id) : null,
       payment_time: payment ? payment.paid_at : null,
-      payment_method: payment ? payment.payment_method : null
+      payment_method: payment ? payment.payment_method : null,
+      payment_status: payment ? payment.payment_status : (r.registration_status === 'PAID' ? 'SUCCESS' : 'PENDING'),
+      refund_status: payment ? (payment.refund_status || 'NOT_REQUIRED') : 'NOT_REQUIRED'
     };
   });
 

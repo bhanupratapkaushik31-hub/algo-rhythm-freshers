@@ -26,6 +26,16 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+interface EntryLog {
+  id: string;
+  registration_id: string;
+  action: 'ENTRY' | 'RE_ENTRY';
+  scanned_at: string;
+  scanned_by: string | null;
+  scanner_device: string | null;
+  created_at?: string;
+}
+
 interface RegistrationDetail {
   id: string;
   ticket_id: string | null;
@@ -49,6 +59,9 @@ interface RegistrationDetail {
   email_status: 'PENDING' | 'SENT' | 'FAILED' | null;
   email_error: string | null;
   email_sent_at: string | null;
+  photo_path?: string | null;
+  photo_url?: string | null;
+  entry_logs?: EntryLog[];
 }
 
 export default function AdminRegistrations() {
@@ -74,10 +87,32 @@ export default function AdminRegistrations() {
 
   // Inspector Drawer States
   const [selectedReg, setSelectedReg] = useState<RegistrationDetail | null>(null);
+  const [selectedLogs, setSelectedLogs] = useState<EntryLog[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [adminRole, setAdminRole] = useState<'super_admin' | 'admin' | 'scanner' | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [updatingEntry, setUpdatingEntry] = useState(false);
+
+  const handleSelectRegistration = async (reg: RegistrationDetail) => {
+    setSelectedReg(reg);
+    setSelectedLogs([]);
+    setLoadingDetail(true);
+    try {
+      const response = await fetch(`/api/admin/registrations/${reg.id}`);
+      const res = await response.json();
+      if (response.ok && res.success && res.data) {
+        setSelectedReg(prev => prev ? { ...prev, ...res.data } : res.data);
+        if (res.data.entry_logs) {
+          setSelectedLogs(res.data.entry_logs);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load full registration details:', err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   const handleResendEmail = async (id: string) => {
     setResendingEmail(true);
@@ -454,20 +489,22 @@ export default function AdminRegistrations() {
               {/* Table Headers */}
               <thead>
                 <tr className="bg-white/5 border-b border-white/5 font-bold uppercase tracking-wider text-slate-400 text-[10px]">
-                  <th className="px-6 py-4">Photo</th>
-                  <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('registration_number')}>
-                    <span className="flex items-center gap-1.5">Reg No. <ArrowUpDown className="w-3 h-3" /></span>
-                  </th>
-                  <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('full_name')}>
+                  <th className="px-4 py-3.5">Photo</th>
+                  <th className="px-4 py-3.5 cursor-pointer hover:text-white" onClick={() => handleSort('full_name')}>
                     <span className="flex items-center gap-1.5">Name <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
-                  <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('ticket_id')}>
+                  <th className="px-4 py-3.5 cursor-pointer hover:text-white" onClick={() => handleSort('ticket_id')}>
                     <span className="flex items-center gap-1.5">Ticket ID <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
-                  <th className="px-6 py-4">Payment</th>
-                  <th className="px-6 py-4">Entry Status</th>
-                  <th className="px-6 py-4">Entry Time</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-4 py-3.5">Phone</th>
+                  <th className="px-4 py-3.5">Email</th>
+                  <th className="px-4 py-3.5">Payment Status</th>
+                  <th className="px-4 py-3.5">Entry Status</th>
+                  <th className="px-4 py-3.5">Entry Time</th>
+                  <th className="px-4 py-3.5 cursor-pointer hover:text-white" onClick={() => handleSort('created_at')}>
+                    <span className="flex items-center gap-1.5">Reg. Time <ArrowUpDown className="w-3 h-3" /></span>
+                  </th>
+                  <th className="px-4 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
 
@@ -476,11 +513,12 @@ export default function AdminRegistrations() {
                 {list.map((reg) => (
                   <tr 
                     key={reg.id} 
-                    onClick={() => setSelectedReg(reg)}
+                    onClick={() => handleSelectRegistration(reg)}
                     className="hover:bg-white/[0.02] cursor-pointer transition-colors"
                   >
-                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0">
+                    {/* Photo */}
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-10 h-10 rounded-full overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0">
                         <img
                           src={`/api/admin/registrations/${reg.id}/photo`}
                           alt={reg.full_name}
@@ -488,10 +526,32 @@ export default function AdminRegistrations() {
                         />
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-semibold text-slate-200 font-outfit">{reg.registration_number}</td>
-                    <td className="px-6 py-4 font-bold text-white truncate max-w-[150px]">{reg.full_name}</td>
-                    <td className="px-6 py-4 font-bold text-white font-outfit">{reg.ticket_id || 'N/A'}</td>
-                    <td className="px-6 py-4">
+
+                    {/* Name */}
+                    <td className="px-4 py-3.5">
+                      <div className="font-bold text-white truncate max-w-[140px]">{reg.full_name}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">{reg.registration_number} &bull; {reg.year}</div>
+                    </td>
+
+                    {/* Ticket ID */}
+                    <td className="px-4 py-3.5 font-bold text-purple-300 font-mono text-xs">{reg.ticket_id || 'N/A'}</td>
+
+                    {/* Phone */}
+                    <td className="px-4 py-3.5 font-mono text-slate-300 text-xs">
+                      <a href={`tel:${reg.phone}`} className="hover:text-purple-300 transition-colors" onClick={(e) => e.stopPropagation()}>
+                        {reg.phone}
+                      </a>
+                    </td>
+
+                    {/* Email */}
+                    <td className="px-4 py-3.5 truncate max-w-[140px] text-slate-300 text-xs">
+                      <a href={`mailto:${reg.email}`} className="hover:text-purple-300 transition-colors" onClick={(e) => e.stopPropagation()}>
+                        {reg.email}
+                      </a>
+                    </td>
+
+                    {/* Payment Status */}
+                    <td className="px-4 py-3.5">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                         (reg as any).refund_status === 'REFUNDED'
                           ? 'bg-red-500/10 text-red-400 border border-red-500/10'
@@ -508,7 +568,9 @@ export default function AdminRegistrations() {
                          reg.registration_status}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+
+                    {/* Entry Status */}
+                    <td className="px-4 py-3.5">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                         reg.entry_status === 'ENTERED'
                           ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20'
@@ -517,13 +579,22 @@ export default function AdminRegistrations() {
                         {reg.entry_status === 'ENTERED' ? 'Entered' : 'Not Entered'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-slate-400">
-                      {reg.entry_time ? new Date(reg.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+
+                    {/* Entry Time */}
+                    <td className="px-4 py-3.5 text-slate-300 text-xs">
+                      {reg.entry_time ? new Date(reg.entry_time).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : <span className="text-slate-500">—</span>}
                     </td>
-                    <td className="px-6 py-4 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
+
+                    {/* Registration Time */}
+                    <td className="px-4 py-3.5 text-slate-400 text-xs">
+                      {new Date(reg.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3.5 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
                       <button 
-                        onClick={() => setSelectedReg(reg)}
-                        className="p-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300"
+                        onClick={() => handleSelectRegistration(reg)}
+                        className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 cursor-pointer"
                         title="Inspect Profile"
                       >
                         <Eye className="w-4 h-4" />
@@ -593,24 +664,25 @@ export default function AdminRegistrations() {
                 </button>
               </div>
 
-              {/* Student Identification header */}
-              <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center gap-4 animate-fade-in">
-                <div className="w-12 h-12 rounded-full overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0">
+              {/* Large Student Identification & Photo Header */}
+              <div className="p-5 bg-white/5 border border-white/5 rounded-2xl flex flex-col items-center text-center gap-3 animate-fade-in">
+                <div className="w-44 h-44 rounded-2xl overflow-hidden border-2 border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-xl relative">
                   <img
-                    src={`/api/admin/registrations/${selectedReg.id}/photo`}
+                    src={selectedReg.photo_url || `/api/admin/registrations/${selectedReg.id}/photo`}
                     alt={selectedReg.full_name}
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-white font-outfit leading-tight text-base">{selectedReg.full_name}</h4>
+                  <h4 className="font-extrabold text-white font-outfit leading-tight text-lg">{selectedReg.full_name}</h4>
+                  <p className="text-purple-300 font-mono text-xs font-bold mt-1">Ticket ID: {selectedReg.ticket_id || 'N/A'}</p>
                   <p className="text-slate-400 text-xs mt-0.5">{selectedReg.registration_number} &bull; {selectedReg.year}</p>
                 </div>
               </div>
 
               {/* Details table list */}
               <div className="space-y-4 pt-2">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Information</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Complete Details</h4>
                 <div className="space-y-3 text-xs bg-black/20 p-4 rounded-xl border border-white/5">
                   <div className="flex justify-between">
                     <span className="text-slate-500">School:</span>
@@ -653,7 +725,7 @@ export default function AdminRegistrations() {
                   )}
                   <div className="flex justify-between">
                     <span className="text-slate-500">Ticket ID:</span>
-                    <span className="font-bold text-amber-500">{selectedReg.ticket_id || 'N/A'}</span>
+                    <span className="font-bold text-amber-500 font-mono">{selectedReg.ticket_id || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Registration Time:</span>
@@ -664,7 +736,7 @@ export default function AdminRegistrations() {
 
               {/* Transaction details */}
               <div className="space-y-4 pt-2">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment & Transaction Log</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Information</h4>
                 <div className="space-y-3 text-xs bg-black/20 p-4 rounded-xl border border-white/5">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Ticket Status:</span>
@@ -722,29 +794,76 @@ export default function AdminRegistrations() {
                 </div>
               </div>
 
-              {/* Check-in Logs */}
+              {/* Entry & Re-Entry History */}
               <div className="space-y-4 pt-2">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Event Check-In Log</h4>
-                <div className="space-y-3 text-xs bg-black/20 p-4 rounded-xl border border-white/5">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Status:</span>
-                    <span className={`font-bold uppercase tracking-wider ${
-                      selectedReg.entry_status === 'ENTERED' ? 'text-indigo-400' : 'text-slate-500'
-                    }`}>{selectedReg.entry_status === 'ENTERED' ? 'Entered' : 'Not Checked-In'}</span>
-                  </div>
-                  {selectedReg.entry_status === 'ENTERED' && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Scanned By:</span>
-                        <span className="font-semibold text-slate-300">{selectedReg.entry_scanned_by || 'Staff'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Check-in Time:</span>
-                        <span className="text-slate-400">{selectedReg.entry_time ? new Date(selectedReg.entry_time).toLocaleString() : 'N/A'}</span>
-                      </div>
-                    </>
-                  )}
+                <div className="flex justify-between items-center">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entry & Re-Entry History</h4>
+                  <span className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
+                    {selectedLogs.length} Event{selectedLogs.length === 1 ? '' : 's'}
+                  </span>
                 </div>
+
+                {loadingDetail ? (
+                  <div className="py-6 flex justify-center items-center gap-2 text-slate-400 text-xs bg-black/20 rounded-xl border border-white/5">
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                    Fetching entry logs...
+                  </div>
+                ) : selectedLogs.length === 0 ? (
+                  <div className="bg-black/20 p-4 rounded-xl border border-white/5 text-xs text-slate-400 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Current Status:</span>
+                      <span className={`font-bold uppercase tracking-wider ${
+                        selectedReg.entry_status === 'ENTERED' ? 'text-indigo-400' : 'text-slate-500'
+                      }`}>{selectedReg.entry_status === 'ENTERED' ? 'Entered' : 'Not Checked-In'}</span>
+                    </div>
+                    {selectedReg.entry_status === 'ENTERED' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Scanned By:</span>
+                          <span className="font-semibold text-slate-300">{selectedReg.entry_scanned_by || 'Staff'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Check-in Time:</span>
+                          <span className="text-slate-400">{selectedReg.entry_time ? new Date(selectedReg.entry_time).toLocaleString() : 'N/A'}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {selectedLogs.map((log, idx) => (
+                      <div 
+                        key={log.id || idx} 
+                        className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                          log.action === 'ENTRY' 
+                            ? 'bg-emerald-950/20 border-emerald-500/25 text-emerald-200'
+                            : 'bg-amber-950/20 border-amber-500/25 text-amber-200'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                            log.action === 'ENTRY'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}>
+                            {log.action === 'ENTRY' ? '✓ Initial Entry' : '↻ Re-Entry'}
+                          </span>
+                          <span className="text-slate-400 text-[10px]">
+                            {new Date(log.scanned_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px] pt-1">
+                          <span className="text-slate-400">Coordinator:</span>
+                          <span className="font-semibold text-white">{log.scanned_by || 'Coordinator'}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400">Device / Portal:</span>
+                          <span className="text-slate-300">{log.scanner_device || 'Web Browser'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>
