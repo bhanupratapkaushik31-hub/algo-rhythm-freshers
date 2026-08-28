@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       .from('entries')
       .select('*')
       .or(`coordinator_id.eq.${admin.id},scanned_by.eq.${admin.email}`)
+      .eq('is_test', false)
       .order('entry_time', { ascending: false });
 
     if (entryErr) {

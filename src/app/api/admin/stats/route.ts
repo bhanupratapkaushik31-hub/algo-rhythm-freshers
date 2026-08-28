@@ -64,7 +64,8 @@ export async function GET(request: NextRequest) {
     // Entries Completed
     const { count: entriesCompleted, error: errEntries } = await supabaseAdmin
       .from('entries')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('is_test', false);
 
     // Total Collection (Revenue calculation from successful payments)
     const { data: paymentsData, error: err4 } = await supabaseAdmin

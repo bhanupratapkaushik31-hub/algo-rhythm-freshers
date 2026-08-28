@@ -14,7 +14,8 @@ import {
   User, 
   UserCheck,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  FlaskConical
 } from 'lucide-react';
 import { EVENT_CONFIG } from '@/config/event';
 
@@ -39,12 +40,40 @@ export default function AdminScanner() {
   const [markingEntry, setMarkingEntry] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  
+  // Test Mode configuration
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const scannerId = 'qr-reader-viewport';
+  const autoResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check user role on mount to allow/deny Test Mode toggling
+  useEffect(() => {
+    const verifyUserRole = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: adminProfile } = await supabase
+            .from('admins')
+            .select('role')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (adminProfile && (adminProfile.role === 'super_admin' || adminProfile.role === 'admin')) {
+            setIsAdminUser(true);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve admin role:', err);
+      }
+    };
+    verifyUserRole();
+  }, []);
 
   // 1. Synth Beep Sound Feedback using Web Audio API
-  const playBeep = (type: 'success' | 'error' | 'success-marked') => {
+  const playBeep = (type: 'success' | 'error' | 'success-marked' | 'already') => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
@@ -74,6 +103,21 @@ export default function AdminScanner() {
         gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.12);
         osc2.start();
         osc2.stop(ctx.currentTime + 0.25);
+      } else if (type === 'already') {
+        // Alternating alerts for duplicate check-ins
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.frequency.setValueAtTime(349.2, ctx.currentTime + 0.15); // lower pitch F4
+        gain2.gain.setValueAtTime(0.1, ctx.currentTime + 0.15);
+        osc2.start();
+        osc2.stop(ctx.currentTime + 0.3);
       } else {
         osc.frequency.setValueAtTime(180, ctx.currentTime); // low buzz
         gain.gain.setValueAtTime(0.15, ctx.currentTime);
@@ -149,11 +193,23 @@ export default function AdminScanner() {
 
     return () => {
       stopCamera();
+      if (autoResetTimeoutRef.current) {
+        clearTimeout(autoResetTimeoutRef.current);
+      }
     };
   }, []);
 
+  // Clear auto-reset timeouts on unmount or reset
+  const clearAutoReset = () => {
+    if (autoResetTimeoutRef.current) {
+      clearTimeout(autoResetTimeoutRef.current);
+      autoResetTimeoutRef.current = null;
+    }
+  };
+
   // 4. Verify scanned token
   const handleTicketScanned = async (token: string) => {
+    clearAutoReset();
     // Temporarily pause camera scans
     await stopCamera();
     setScanState('VERIFYING');
@@ -169,7 +225,11 @@ export default function AdminScanner() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
-        body: JSON.stringify({ ticket_token: token }),
+        body: JSON.stringify({ 
+          ticket_token: token,
+          is_test_mode: isTestMode,
+          scanner_device: isTestMode ? 'Admin Test Terminal' : 'Mobile Admin Scanner'
+        }),
       });
 
       const res = await response.json();
@@ -185,21 +245,32 @@ export default function AdminScanner() {
           setScanState('INVALID');
           setErrorMsg(res.error?.message || 'Unable to verify this ticket.');
         }
+
+        // Auto reset scanner on scan failure/inactive event after 4 seconds
+        autoResetTimeoutRef.current = setTimeout(resetScanner, 4000);
         return;
       }
 
       // Successful lookup
       const resultData = res.data;
-      triggerHaptic(100);
-      playBeep('success');
+      setStudent(resultData.student);
+      setEntryDetails({
+        ...resultData.entry_details,
+        is_test: resultData.is_test
+      });
 
       if (resultData.status === 'ALREADY_ENTERED') {
+        triggerHaptic([150, 100, 150]);
+        playBeep('already');
         setScanState('ALREADY_ENTERED');
-        setStudent(resultData.student);
-        setEntryDetails(resultData.entry_details);
+        // Auto reset scanner on duplicate after 4 seconds
+        autoResetTimeoutRef.current = setTimeout(resetScanner, 4000);
       } else if (resultData.status === 'VALID' || resultData.status === 'MARKED') {
+        triggerHaptic([80, 50, 80]);
+        playBeep('success-marked');
         setScanState('MARKED');
-        setStudent(resultData.student);
+        // Auto reset scanner on successful marked check-in after 3.5 seconds
+        autoResetTimeoutRef.current = setTimeout(resetScanner, 3500);
       }
 
     } catch (err) {
@@ -208,13 +279,15 @@ export default function AdminScanner() {
       playBeep('error');
       setScanState('INVALID');
       setErrorMsg('Network error checking ticket validity.');
+      autoResetTimeoutRef.current = setTimeout(resetScanner, 4000);
     }
   };
 
-  // 5. Check-in Student (Mark Entry)
+  // 5. Check-in Student manually (Mark Entry)
   const handleMarkEntry = async () => {
     if (!student) return;
     setMarkingEntry(true);
+    clearAutoReset();
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -234,6 +307,7 @@ export default function AdminScanner() {
         triggerHaptic([80, 50, 100]); // double pulse
         playBeep('success-marked');
         setScanState('MARKED');
+        autoResetTimeoutRef.current = setTimeout(resetScanner, 3500);
       } else {
         alert(res.error?.message || 'Failed to check in student.');
       }
@@ -248,6 +322,7 @@ export default function AdminScanner() {
 
   // 6. Reset scanner to scanning state
   const resetScanner = async () => {
+    clearAutoReset();
     setStudent(null);
     setEntryDetails(null);
     setErrorMsg(null);
@@ -258,11 +333,46 @@ export default function AdminScanner() {
   return (
     <AdminLayout requiredRoles={['super_admin', 'admin', 'scanner']}>
       
-      {/* Title */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-extrabold font-outfit text-white tracking-tight">QR Entry Checker</h1>
-        <p className="text-slate-400 text-xs mt-1">Scan student ticket QR code to verify details and mark entry.</p>
+      {/* Title with Test Mode Toggle */}
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold font-outfit text-white tracking-tight">QR Entry Checker</h1>
+          <p className="text-slate-400 text-xs mt-1">Scan student ticket QR code to verify details and mark entry.</p>
+        </div>
+
+        {/* Admin Test Mode Controls */}
+        {isAdminUser && (
+          <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2.5 rounded-2xl shrink-0">
+            <div className="flex items-center gap-1.5">
+              <FlaskConical className={`w-4 h-4 ${isTestMode ? 'text-amber-400' : 'text-slate-400'}`} />
+              <span className="text-xs font-bold text-slate-300">TEST MODE</span>
+            </div>
+            <button
+              onClick={() => {
+                const newVal = !isTestMode;
+                setIsTestMode(newVal);
+                resetScanner();
+              }}
+              className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
+                isTestMode ? 'bg-amber-500' : 'bg-slate-700'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${
+                  isTestMode ? 'translate-x-6' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Test Mode warning notification banner */}
+      {isTestMode && scanState === 'SCANNING' && (
+        <div className="w-full max-w-lg mx-auto mb-6 bg-amber-500/10 border border-amber-500/20 text-amber-300 px-4 py-3 rounded-2xl text-xs font-semibold text-center leading-relaxed">
+          🧪 TEST MODE ACTIVE — Check-ins made here are TEST entries and will not affect attendance statistics.
+        </div>
+      )}
 
       {/* Render based on scanState */}
       <div className="flex-1 flex flex-col items-center justify-center max-w-lg mx-auto w-full">
@@ -397,10 +507,12 @@ export default function AdminScanner() {
               </div>
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold bg-emerald-500/10 px-3.5 py-1 rounded-full border border-emerald-500/10">
-                  ✓ ENTRY MARKED
+                  {isTestMode ? '✓ TEST CHECK-IN' : '✓ ENTRY MARKED'}
                 </span>
                 <h3 className="text-2xl font-black font-outfit text-white mt-4">{student.full_name}</h3>
-                <p className="text-purple-300 text-xs font-semibold mt-1">Welcome to ALGO-RHYTHM 2K26 🎉</p>
+                <p className="text-purple-300 text-xs font-semibold mt-1">
+                  {isTestMode ? 'TEST CHECK-IN SUCCESSFUL 🧪' : 'Welcome to ALGO-RHYTHM 2K26 🎉'}
+                </p>
                 <p className="text-slate-500 text-[10px] uppercase mt-2">Ticket ID: {student.ticket_id}</p>
               </div>
 
@@ -427,7 +539,7 @@ export default function AdminScanner() {
               </div>
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded-full border border-red-500/10">
-                  ⚠️ ALREADY ENTERED
+                  {entryDetails.is_test ? '⚠️ ALREADY TEST CHECKED-IN' : '⚠️ ALREADY ENTERED'}
                 </span>
                 <h3 className="text-xl font-bold font-outfit text-white mt-4">{student.full_name}</h3>
                 <p className="text-slate-400 text-xs mt-0.5">{student.registration_number} &bull; {student.year}</p>
@@ -439,20 +551,25 @@ export default function AdminScanner() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-red-400/70">Check-in time:</span>
-                  <span className="font-semibold">{new Date(entryDetails.entry_time).toLocaleString()}</span>
+                  <span className="font-semibold">
+                    {entryDetails.entry_time ? new Date(entryDetails.entry_time).toLocaleString() : 'N/A'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-red-400/70">Scanned By:</span>
-                  <span className="font-semibold">{entryDetails.scanned_by}</span>
+                  <span className="font-semibold">{entryDetails.scanned_by || 'Staff'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-red-400/70">Device:</span>
-                  <span className="font-semibold">{entryDetails.scanner_device}</span>
+                  <span className="font-semibold">{entryDetails.scanner_device || 'Scanner Device'}</span>
                 </div>
               </div>
 
               <p className="text-[10px] text-slate-500 leading-normal max-w-xs mx-auto">
-                This ticket was already checked-in and cannot be reused. Duplicate entry check-in blocked.
+                {entryDetails.is_test 
+                  ? 'This ticket was already test checked-in. Duplicate test records are blocked.'
+                  : 'This ticket was already checked-in and cannot be reused. Duplicate entry check-in blocked.'
+                }
               </p>
 
               <div className="pt-2">
@@ -509,11 +626,11 @@ export default function AdminScanner() {
               </div>
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded-full border border-red-500/10">
-                  ❌ INVALID TICKET
+                  ❌ SCAN ERROR
                 </span>
                 <h3 className="text-lg font-bold text-white font-outfit mt-4">Verification Failed</h3>
                 <p className="text-slate-400 text-xs mt-1 leading-relaxed max-w-xs mx-auto">
-                  {errorMsg || 'Unable to verify this ticket. This token does not correspond to any registered student.'}
+                  {errorMsg || 'Unable to verify this ticket.'}
                 </p>
               </div>
 

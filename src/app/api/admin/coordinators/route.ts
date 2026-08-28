@@ -31,13 +31,15 @@ export async function GET(request: NextRequest) {
     let entries: any[] = [];
     const { data: entriesWithCoord, error: entriesErr } = await supabaseAdmin
       .from('entries')
-      .select('coordinator_id, scanned_by, entry_time');
+      .select('coordinator_id, scanned_by, entry_time')
+      .eq('is_test', false);
 
     if (entriesErr) {
       console.warn('Fetch entries with coordinator_id failed, trying fallback:', entriesErr.message);
       const { data: entriesFallback, error: fallbackErr } = await supabaseAdmin
         .from('entries')
-        .select('scanned_by, entry_time');
+        .select('scanned_by, entry_time')
+        .eq('is_test', false);
 
       if (fallbackErr) {
         console.error('Fetch entries fallback DB error:', fallbackErr);
