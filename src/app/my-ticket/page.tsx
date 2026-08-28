@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
-import { Calendar, Clock, MapPin, ShieldCheck, Ticket, LogOut, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, ShieldCheck, Ticket, LogOut, ArrowLeft } from 'lucide-react';
 import QRCode from 'qrcode';
 import TicketActions from '../ticket/[token]/TicketActions';
 import RetrieveForm from './RetrieveForm';
@@ -20,19 +20,19 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
   const { action, error } = await searchParams;
   const cookieStore = await cookies();
   const ticketTokenCookie = cookieStore.get('student_ticket_token')?.value;
-  const emailCookie = cookieStore.get('student_email')?.value;
+  const phoneCookie = cookieStore.get('student_phone')?.value;
 
   let reg: any = null;
   let hasMultipleTickets = false;
   let ticketsList: any[] = [];
   let entryStatus = 'NOT_ENTERED';
 
-  // 1. Fetch registrations under email to check if there are multiple tickets
-  if (emailCookie) {
+  // 1. Fetch registrations under phone number to check if there are multiple tickets
+  if (phoneCookie) {
     const { data: regs } = await supabaseAdmin
       .from('registrations')
       .select('id, full_name, registration_number, ticket_id, ticket_token')
-      .eq('email', emailCookie.trim().toLowerCase())
+      .eq('phone', phoneCookie.trim())
       .eq('registration_status', 'PAID');
     
     if (regs && regs.length > 0) {
@@ -281,7 +281,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
               className="text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-wider flex items-center gap-1"
             >
               <LogOut className="w-3 h-3" />
-              Disconnect / Use Another Email
+              Disconnect / Use Another Number
             </a>
           </div>
 
@@ -291,7 +291,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
   }
 
   // 4. Render State A-2: Select Ticket from List
-  if (emailCookie && ticketsList.length > 0) {
+  if (phoneCookie && ticketsList.length > 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
         <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
@@ -307,24 +307,12 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
           </Link>
         </header>
 
-        <MultiTicketSelect tickets={ticketsList} email={emailCookie} />
+        <MultiTicketSelect tickets={ticketsList} phone={phoneCookie} />
       </div>
     );
   }
 
   // 5. Render State B: Retrieve Ticket Form
-  // Display errors if magic link fails or expired
-  let errorMsg = null;
-  if (error === 'invalid_token') {
-    errorMsg = 'Your verification link is invalid. Please request a new one.';
-  } else if (error === 'expired_token') {
-    errorMsg = 'Your verification link has expired. Verification links are only valid for 15 minutes.';
-  } else if (error === 'no_registration') {
-    errorMsg = 'No paid registrations found for this email address.';
-  } else if (error) {
-    errorMsg = 'Verification failed. Please try again.';
-  }
-
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
@@ -340,12 +328,12 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
         </Link>
       </header>
 
-      {errorMsg && (
+      {error && (
         <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-pulse">
           <svg className="w-4 h-4 shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span>{errorMsg}</span>
+          <span>An error occurred. Please try again.</span>
         </div>
       )}
 

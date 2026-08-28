@@ -14,10 +14,10 @@ interface TicketItem {
 
 interface MultiTicketSelectProps {
   tickets: TicketItem[];
-  email: string;
+  phone: string;
 }
 
-export default function MultiTicketSelect({ tickets, email }: MultiTicketSelectProps) {
+export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectProps) {
   const router = useRouter();
 
   const handleSelect = (token: string) => {
@@ -38,7 +38,7 @@ export default function MultiTicketSelect({ tickets, email }: MultiTicketSelectP
 
         <h2 className="text-2xl font-bold font-outfit text-white">Multiple Tickets Found</h2>
         <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
-          We found {tickets.length} registrations matching <strong className="text-slate-200">{email}</strong>. Select which ticket you want to view:
+          We found {tickets.length} registrations matching phone number <strong className="text-slate-200">+91 {phone}</strong>. Select which ticket you want to view:
         </p>
 
         {/* Tickets list */}
@@ -73,7 +73,7 @@ export default function MultiTicketSelect({ tickets, email }: MultiTicketSelectP
             className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Use Another Email
+            Use Another Number
           </a>
         </div>
       </div>
