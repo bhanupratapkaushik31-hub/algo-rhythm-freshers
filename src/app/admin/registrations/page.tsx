@@ -46,6 +46,9 @@ interface RegistrationDetail {
   created_at: string;
   payment_method: string | null;
   email_sent: boolean;
+  email_status: 'PENDING' | 'SENT' | 'FAILED' | null;
+  email_error: string | null;
+  email_sent_at: string | null;
 }
 
 export default function AdminRegistrations() {
@@ -84,7 +87,13 @@ export default function AdminRegistrations() {
         alert('Ticket email has been successfully resent.');
         fetchRegistrations();
         if (selectedReg) {
-          setSelectedReg({ ...selectedReg, email_sent: true });
+          setSelectedReg({ 
+            ...selectedReg, 
+            email_sent: true,
+            email_status: 'SENT',
+            email_sent_at: new Date().toISOString(),
+            email_error: null
+          });
         }
       } else {
         alert(res.error?.message || 'Failed to resend email.');
@@ -610,10 +619,27 @@ export default function AdminRegistrations() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Email Status:</span>
-                    <span className={`font-bold uppercase tracking-wider ${selectedReg.email_sent ? 'text-emerald-400' : 'text-slate-400'}`}>
-                      {selectedReg.email_sent ? 'Sent' : 'Not Sent'}
+                    <span className={`font-bold uppercase tracking-wider ${
+                      selectedReg.email_status === 'SENT' ? 'text-emerald-400' : 
+                      selectedReg.email_status === 'FAILED' ? 'text-red-400' : 'text-slate-400'
+                    }`}>
+                      {selectedReg.email_status || (selectedReg.email_sent ? 'SENT' : 'NOT SENT')}
                     </span>
                   </div>
+                  {selectedReg.email_sent_at && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Email Sent At:</span>
+                      <span className="text-slate-300 font-semibold">{new Date(selectedReg.email_sent_at).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedReg.email_error && (
+                    <div className="flex flex-col gap-1 border-t border-white/5 pt-2 mt-1">
+                      <span className="text-slate-500">Email Error:</span>
+                      <span className="text-red-400 font-mono text-[10px] break-all bg-red-950/20 p-2 rounded border border-red-900/20">
+                        {selectedReg.email_error}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-slate-500">Ticket ID:</span>
                     <span className="font-bold text-amber-500">{selectedReg.ticket_id || 'N/A'}</span>
@@ -740,7 +766,7 @@ export default function AdminRegistrations() {
                     ) : (
                       <>
                         <Mail className="w-4 h-4" />
-                        Send Ticket Again
+                        Resend Ticket
                       </>
                     )}
                   </button>

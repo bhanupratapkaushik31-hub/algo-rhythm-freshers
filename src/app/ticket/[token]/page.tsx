@@ -242,7 +242,7 @@ export default async function TicketPage({ params }: TicketPageProps) {
         </div>
 
         {/* Buttons / Actions container */}
-        <TicketActions ticketId={reg.ticket_id || '0000'} />
+        <TicketActions ticketId={reg.ticket_id || '0000'} registrationNumber={reg.registration_number} />
 
       </div>
     </div>

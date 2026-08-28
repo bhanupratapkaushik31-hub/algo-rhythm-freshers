@@ -284,9 +284,11 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
     `;
 
     // 5. Dispatch Email (Try Resend first if API key exists, otherwise fallback to Gmail SMTP)
+    const timestamp = new Date().toISOString();
+
     if (process.env.RESEND_API_KEY) {
+      console.log(`[Email Service] Attempting Resend dispatch for ${reg.email}...`);
       try {
-        console.log(`[Email Service] Attempting Resend dispatch for ${reg.email}...`);
         const { Resend } = require('resend');
         const resend = new Resend(process.env.RESEND_API_KEY);
         const fromEmail = process.env.RESEND_FROM_EMAIL || 'ALGO-RHYTHM <noreply@resend.dev>';
@@ -305,8 +307,8 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
         const resendId = resendRes.data?.id || 'RESEND_OK';
         console.log(`[Resend Service] Email sent successfully to ${reg.email}. ID: ${resendId}`);
 
-        const timestamp = new Date().toISOString();
-        await supabaseAdmin
+        // Update database: Try updating with email_sent_at
+        const { error: updateErr } = await supabaseAdmin
           .from('registrations')
           .update({
             email_sent: true,
@@ -317,10 +319,82 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
           })
           .eq('id', registrationId);
 
+        if (updateErr) {
+          console.warn(`[Resend Service] Failed to update registrations with email_sent_at column, retrying without it:`, updateErr.message);
+          await supabaseAdmin
+            .from('registrations')
+            .update({
+              email_sent: true,
+              email_status: 'SENT',
+              email_error: `RESEND_ID: ${resendId} (sent_at omitted)`,
+              updated_at: timestamp
+            })
+            .eq('id', registrationId);
+        }
+
         return true;
       } catch (resendErr: any) {
-        console.warn(`[Resend Service] Resend dispatch failed, falling back to Gmail transporter:`, resendErr.message || resendErr);
+        const errMsg = resendErr.message || String(resendErr);
+        console.error(`[Resend Service] Resend dispatch failed for registration ${registrationId}:`, errMsg);
+        
+        // Log Resend error directly in database
+        const { error: updateErr } = await supabaseAdmin
+          .from('registrations')
+          .update({
+            email_sent: false,
+            email_status: 'FAILED',
+            email_error: `[Resend Error] ${errMsg}`,
+            updated_at: timestamp
+          })
+          .eq('id', registrationId);
+
+        if (updateErr) {
+          console.warn(`[Resend Service] Failed to update fail status with email_sent_at column, retrying without it:`, updateErr.message);
+          await supabaseAdmin
+            .from('registrations')
+            .update({
+              email_sent: false,
+              email_status: 'FAILED',
+              email_error: `[Resend Error] ${errMsg} (sent_at omitted)`,
+              updated_at: timestamp
+            })
+            .eq('id', registrationId);
+        }
+        
+        return false;
       }
+    }
+
+    // Gmail SMTP Fallback (Only executed if RESEND_API_KEY is not defined)
+    console.log(`[Gmail Service] Attempting Gmail SMTP dispatch for ${reg.email}...`);
+    const transporter = getTransporter();
+
+    if (!transporter) {
+      const missingCredsMsg = 'GMAIL_APP_PASSWORD or GMAIL_OAUTH credentials are missing in environment variables.';
+      console.warn(`[Gmail Service] Gmail sending configuration is missing. Email skipped.`);
+      
+      const { error: updateErr } = await supabaseAdmin
+        .from('registrations')
+        .update({
+          email_sent: false,
+          email_status: 'FAILED',
+          email_error: missingCredsMsg,
+          updated_at: timestamp
+        })
+        .eq('id', registrationId);
+
+      if (updateErr) {
+        await supabaseAdmin
+          .from('registrations')
+          .update({
+            email_sent: false,
+            email_status: 'FAILED',
+            email_error: `${missingCredsMsg} (sent_at omitted)`,
+            updated_at: timestamp
+          })
+          .eq('id', registrationId);
+      }
+      return false;
     }
 
     const mailOptions = {
@@ -333,9 +407,8 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
     const info = await transporter.sendMail(mailOptions);
     console.log(`[Gmail Service] Email sent successfully to ${reg.email}. Message ID: ${info.messageId}`);
 
-    // 6. Update database record: Store status SENT, sent time, and use email_error to log the messageId
-    const timestamp = new Date().toISOString();
-    await supabaseAdmin
+    // Update database record: Store status SENT, sent time, and use email_error to log the messageId
+    const { error: updateErr } = await supabaseAdmin
       .from('registrations')
       .update({
         email_sent: true,
@@ -346,21 +419,47 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
       })
       .eq('id', registrationId);
 
+    if (updateErr) {
+      console.warn(`[Gmail Service] Failed to update registrations with email_sent_at column, retrying without it:`, updateErr.message);
+      await supabaseAdmin
+        .from('registrations')
+        .update({
+          email_sent: true,
+          email_status: 'SENT',
+          email_error: `MSG_ID: ${info.messageId} (sent_at omitted)`,
+          updated_at: timestamp
+        })
+        .eq('id', registrationId);
+    }
+
     return true;
 
   } catch (emailErr: any) {
-    console.error(`Gmail sending error for registration ${registrationId}:`, emailErr);
+    const errMsg = emailErr.message || String(emailErr);
+    console.error(`Gmail sending error for registration ${registrationId}:`, errMsg);
     try {
       const timestamp = new Date().toISOString();
-      await supabaseAdmin
+      const { error: updateErr } = await supabaseAdmin
         .from('registrations')
         .update({
           email_sent: false,
           email_status: 'FAILED',
-          email_error: emailErr.message || String(emailErr),
+          email_error: `[Gmail SMTP Error] ${errMsg}`,
           updated_at: timestamp
         })
         .eq('id', registrationId);
+
+      if (updateErr) {
+        await supabaseAdmin
+          .from('registrations')
+          .update({
+            email_sent: false,
+            email_status: 'FAILED',
+            email_error: `[Gmail SMTP Error] ${errMsg} (sent_at omitted)`,
+            updated_at: timestamp
+          })
+          .eq('id', registrationId);
+      }
     } catch (dbErr) {
       console.error(`Failed to update email failure status in DB for ${registrationId}:`, dbErr);
     }
