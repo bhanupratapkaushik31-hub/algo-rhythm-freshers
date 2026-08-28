@@ -61,11 +61,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ticket_id: reg.ticket_id,
           coordinator_id: admin.id,
           entry_status: 'ENTERED',
-          scanned_by: `${admin.name} (Admin Manual)`,
+          scanned_by: `${admin.name || admin.email} (Admin Manual)`,
           scanner_device: 'Admin Dashboard',
           scanned_at: timestamp,
           status: 'ENTERED',
-          entry_time: timestamp
+          entry_time: timestamp,
+          is_test: false
         });
 
       if (insertErr) {
