@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Download, Image as ImageIcon, Printer, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 
 interface TicketActionsProps {
