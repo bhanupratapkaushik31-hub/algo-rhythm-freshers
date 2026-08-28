@@ -76,21 +76,33 @@ export default function AdminLogin() {
             'Authorization': `Bearer ${session.access_token}`
           }
         });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error('[ADMIN_AUTH] Profile validation HTTP error:', response.status, errText);
+          throw new Error(`Profile check failed with status ${response.status}. Please check server/database status.`);
+        }
+        
         const res = await response.json();
 
-        if (res.success && res.data && ['scanner', 'coordinator'].includes(res.data.role)) {
-          router.push('/coordinator/scanner');
+        if (res.success && res.data) {
+          if (['scanner', 'coordinator'].includes(res.data.role)) {
+            router.push('/coordinator/scanner');
+          } else {
+            router.push('/admin');
+          }
         } else {
-          router.push('/admin');
+          setError(res.error?.message || 'Unauthorized access. Profile not configured.');
+          setLoading(false);
         }
       } else {
         setError('Failed to establish session.');
         setLoading(false);
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError('Something went wrong during login. Please try again.');
+      setError(err.message || 'Something went wrong during login. Please try again.');
       setLoading(false);
     }
   };

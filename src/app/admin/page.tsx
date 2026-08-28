@@ -123,10 +123,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
 
-    // Set up auto-polling every 10 seconds for real-time dashboard updating
+    // Set up auto-polling every 15 seconds for real-time dashboard updating
     const interval = setInterval(() => {
       fetchData(true);
-    }, 1000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, []);

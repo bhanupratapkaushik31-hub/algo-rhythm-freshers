@@ -54,15 +54,20 @@ export default function AdminScanner() {
     const verifyUserRole = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: adminProfile } = await supabase
-            .from('admins')
-            .select('role')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          if (adminProfile && (adminProfile.role === 'super_admin' || adminProfile.role === 'admin')) {
-            setIsAdminUser(true);
+        if (session?.access_token) {
+          const response = await fetch('/api/admin/profile', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+          if (response.ok) {
+            const res = await response.json();
+            if (res.success && res.data) {
+              const role = res.data.role;
+              if (role === 'super_admin' || role === 'admin') {
+                setIsAdminUser(true);
+              }
+            }
           }
         }
       } catch (err) {
