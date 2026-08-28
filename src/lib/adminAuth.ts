@@ -38,11 +38,35 @@ export async function verifyAdminAuth(
     if (error || !user) return null;
 
     // Fetch details and role from the custom admins table
-    const { data: adminRecord, error: adminErr } = await supabaseAdmin
+    let { data: adminRecord, error: adminErr } = await supabaseAdmin
       .from('admins')
       .select('*')
       .eq('id', user.id)
       .maybeSingle();
+
+    // Auto-seed ground-truth super admins if they exist in Auth but not custom table
+    const isGroundTruthSuperAdmin = user.email === 'scailpu@gmail.com' || user.email === 'bhanupratapias2005@gmail.com';
+    
+    if (isGroundTruthSuperAdmin && (!adminRecord || adminRecord.role !== 'super_admin')) {
+      console.log(`[verifyAdminAuth] Auto-seeding super admin profile for ground-truth email: ${user.email}`);
+      const { data: seededAdmin, error: seedErr } = await supabaseAdmin
+        .from('admins')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          name: 'Super Admin',
+          role: 'super_admin'
+        })
+        .select()
+        .single();
+        
+      if (!seedErr && seededAdmin) {
+        adminRecord = seededAdmin;
+        adminErr = null;
+      } else {
+        console.error(`[verifyAdminAuth] Failed to auto-seed super admin for ${user.email}:`, seedErr);
+      }
+    }
 
     if (adminErr || !adminRecord) {
       console.warn(`Auth user ${user.email} not registered in public.admins table.`);

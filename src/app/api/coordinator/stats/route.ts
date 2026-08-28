@@ -17,11 +17,14 @@ export async function GET(request: NextRequest) {
     let entries: any[] = [];
     let entryErr: any = null;
 
+    const { searchParams } = new URL(request.url);
+    const isTestParam = searchParams.get('is_test') === 'true';
+
     const { data: primaryEntries, error: primaryErr } = await supabaseAdmin
       .from('entries')
       .select('*')
       .or(`coordinator_id.eq.${admin.id},scanned_by.eq.${admin.email}`)
-      .eq('is_test', false)
+      .eq('is_test', isTestParam)
       .order('entry_time', { ascending: false });
 
     if (primaryErr) {
