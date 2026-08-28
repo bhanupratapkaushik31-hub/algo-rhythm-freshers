@@ -52,9 +52,9 @@ export async function GET(request: NextRequest) {
 
     if (paymentStatus !== 'All') {
       if (paymentStatus === 'SUCCESS') {
-        query = query.eq('payment_status', 'SUCCESS');
+        query = query.or('payment_status.eq.SUCCESS,registration_status.eq.PAID');
       } else if (paymentStatus === 'PENDING') {
-        query = query.eq('payment_status', 'PENDING');
+        query = query.or('payment_status.eq.PENDING,registration_status.eq.PENDING');
       } else if (paymentStatus === 'FAILED') {
         query = query.eq('payment_status', 'FAILED').eq('refund_status', 'NOT_REQUIRED');
       } else if (paymentStatus === 'REFUND_PROCESSING') {
