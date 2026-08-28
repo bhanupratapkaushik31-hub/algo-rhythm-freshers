@@ -197,8 +197,8 @@ export default function AdminScanner() {
         setScanState('ALREADY_ENTERED');
         setStudent(resultData.student);
         setEntryDetails(resultData.entry_details);
-      } else if (resultData.status === 'VALID') {
-        setScanState('VALID');
+      } else if (resultData.status === 'VALID' || resultData.status === 'MARKED') {
+        setScanState('MARKED');
         setStudent(resultData.student);
       }
 
