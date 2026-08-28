@@ -454,20 +454,19 @@ export default function AdminRegistrations() {
               {/* Table Headers */}
               <thead>
                 <tr className="bg-white/5 border-b border-white/5 font-bold uppercase tracking-wider text-slate-400 text-[10px]">
+                  <th className="px-6 py-4">Photo</th>
                   <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('registration_number')}>
                     <span className="flex items-center gap-1.5">Reg No. <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
                   <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('full_name')}>
                     <span className="flex items-center gap-1.5">Name <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
-                  <th className="px-6 py-4">Year</th>
-                  <th className="px-6 py-4">Email</th>
-                  <th className="px-6 py-4">Payment Status</th>
-                  <th className="px-6 py-4">Payment Method</th>
                   <th className="px-6 py-4 cursor-pointer hover:text-white" onClick={() => handleSort('ticket_id')}>
                     <span className="flex items-center gap-1.5">Ticket ID <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
-                  <th className="px-6 py-4">Email Status</th>
+                  <th className="px-6 py-4">Payment</th>
+                  <th className="px-6 py-4">Entry Status</th>
+                  <th className="px-6 py-4">Entry Time</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -480,10 +479,18 @@ export default function AdminRegistrations() {
                     onClick={() => setSelectedReg(reg)}
                     className="hover:bg-white/[0.02] cursor-pointer transition-colors"
                   >
+                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0">
+                        <img
+                          src={`/api/admin/registrations/${reg.id}/photo`}
+                          alt={reg.full_name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </td>
                     <td className="px-6 py-4 font-semibold text-slate-200 font-outfit">{reg.registration_number}</td>
                     <td className="px-6 py-4 font-bold text-white truncate max-w-[150px]">{reg.full_name}</td>
-                    <td className="px-6 py-4">{reg.year}</td>
-                    <td className="px-6 py-4 truncate max-w-[150px]">{reg.email}</td>
+                    <td className="px-6 py-4 font-bold text-white font-outfit">{reg.ticket_id || 'N/A'}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                         (reg as any).refund_status === 'REFUNDED'
@@ -502,27 +509,16 @@ export default function AdminRegistrations() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {reg.registration_status === 'PAID' ? (
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                          reg.payment_method === 'TEST_SIMULATOR'
-                            ? 'bg-purple-500/10 text-purple-400 border border-purple-500/10'
-                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/10'
-                        }`}>
-                          {reg.payment_method === 'TEST_SIMULATOR' ? 'TEST SIMULATOR' : (reg.payment_method || 'RAZORPAY')}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 font-bold text-white font-outfit">{reg.ticket_id || 'N/A'}</td>
-                    <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                        reg.email_sent
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
+                        reg.entry_status === 'ENTERED'
+                          ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20'
                           : 'bg-slate-800 text-slate-400 border border-slate-700'
                       }`}>
-                        {reg.email_sent ? 'Sent' : 'Not Sent'}
+                        {reg.entry_status === 'ENTERED' ? 'Entered' : 'Not Entered'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-slate-400">
+                      {reg.entry_time ? new Date(reg.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
                     </td>
                     <td className="px-6 py-4 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
                       <button 
@@ -598,9 +594,13 @@ export default function AdminRegistrations() {
               </div>
 
               {/* Student Identification header */}
-              <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center gap-4">
-                <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-full flex items-center justify-center font-bold font-outfit text-lg uppercase shrink-0">
-                  {selectedReg.full_name.charAt(0)}
+              <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center gap-4 animate-fade-in">
+                <div className="w-12 h-12 rounded-full overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0">
+                  <img
+                    src={`/api/admin/registrations/${selectedReg.id}/photo`}
+                    alt={selectedReg.full_name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div>
                   <h4 className="font-extrabold text-white font-outfit leading-tight text-base">{selectedReg.full_name}</h4>

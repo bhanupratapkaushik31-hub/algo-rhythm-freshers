@@ -13,13 +13,16 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
-    const { registration_id, scanner_device } = await request.json();
+    const { registration_id, action, is_test, scanner_device } = await request.json();
     if (!registration_id) {
       return NextResponse.json({
         success: false,
         error: { code: 'MISSING_REGISTRATION_ID', message: 'Registration ID is required.' }
       }, { status: 400 });
     }
+
+    const markAction = action || 'ENTRY'; // default to ENTRY
+    const isTest = !!is_test;
 
     // 2. Double check registration status (must be PAID)
     const { data: reg, error: regErr } = await supabaseAdmin
@@ -42,48 +45,73 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 3. Insert check-in record
-    const { data: newEntry, error: insertErr } = await supabaseAdmin
-      .from('entries')
-      .insert({
-        registration_id: registration_id,
-        ticket_id: reg.ticket_id,
-        coordinator_id: admin.id,
-        entry_status: 'ENTERED',
-        scanned_by: admin.email,
-        scanner_device: scanner_device || 'Web Browser',
-        scanned_at: new Date().toISOString(),
-        status: 'ENTERED'
-      })
-      .select()
-      .single();
+    const timestamp = new Date().toISOString();
+    let entryRecord = null;
 
-    if (insertErr) {
-      console.error('Mark entry insertion error:', insertErr);
-      
-      // Unique constraint violation (means someone already entered)
-      if (insertErr.code === '23505') {
+    if (markAction === 'ENTRY') {
+      // 3a. Insert check-in record in entries table
+      const { data: newEntry, error: insertErr } = await supabaseAdmin
+        .from('entries')
+        .insert({
+          registration_id: registration_id,
+          ticket_id: reg.ticket_id,
+          coordinator_id: admin.id,
+          entry_status: isTest ? 'TEST_ENTERED' : 'ENTERED',
+          scanned_by: admin.name || admin.email || 'Admin Staff',
+          scanner_device: scanner_device || 'Web Browser',
+          scanned_at: timestamp,
+          entry_time: timestamp,
+          is_test: isTest
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        console.error('Mark entry insertion error:', insertErr);
+        
+        // Unique constraint violation (means someone already entered)
+        if (insertErr.code === '23505') {
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'ALREADY_ENTERED',
+              message: 'This ticket has already been used for entry.'
+            }
+          }, { status: 400 });
+        }
+
         return NextResponse.json({
           success: false,
-          error: {
-            code: 'ALREADY_ENTERED',
-            message: 'This ticket has already been used for entry.'
-          }
-        }, { status: 400 });
+          error: { code: 'DATABASE_ERROR', message: 'Failed to record entry check-in.' }
+        }, { status: 500 });
       }
 
-      return NextResponse.json({
-        success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to record entry check-in.' }
-      }, { status: 500 });
+      entryRecord = newEntry;
+    }
+
+    // 3b. Insert detail log into entry_logs table
+    const { error: logErr } = await supabaseAdmin
+      .from('entry_logs')
+      .insert({
+        registration_id: registration_id,
+        action: markAction,
+        scanned_by: admin.name || admin.email || 'Admin Staff',
+        scanner_device: scanner_device || 'Web Browser',
+        scanned_at: timestamp
+      });
+
+    if (logErr) {
+      console.error('Failed to write entry log history:', logErr);
+      // We don't fail the whole request because entry check-in succeeded, but we should log it
     }
 
     return NextResponse.json({
       success: true,
       data: {
-        message: 'Entry marked successfully.',
+        message: markAction === 'ENTRY' ? 'Entry marked successfully.' : 'Re-entry approved successfully.',
         ticket_id: reg.ticket_id,
-        entry: newEntry
+        action: markAction,
+        entry: entryRecord || { registration_id, entry_time: timestamp }
       }
     });
 

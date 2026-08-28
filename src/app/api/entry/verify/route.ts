@@ -79,6 +79,31 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Generate signed URL for photo if it exists
+    const defaultPhotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a855f7'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>";
+    let photoUrl = defaultPhotoUrl;
+    if (reg.photo_path) {
+      if (reg.photo_path.startsWith('mock-photos/')) {
+        photoUrl = defaultPhotoUrl;
+      } else {
+        const { data: signedData } = await supabaseAdmin.storage
+          .from('student-photos')
+          .createSignedUrl(reg.photo_path, 3600);
+        photoUrl = signedData?.signedUrl || defaultPhotoUrl;
+      }
+    }
+
+    const formattedStudent = {
+      id: reg.id,
+      ticket_id: reg.ticket_id,
+      full_name: reg.full_name,
+      registration_number: reg.registration_number,
+      year: reg.year,
+      school_name: reg.school_name,
+      modeling: reg.modeling,
+      photo_url: photoUrl
+    };
+
     // 4. Check for duplicate scan matching the current mode (Test vs. Live)
     const { data: existingEntry, error: entryErr } = await supabaseAdmin
       .from('entries')
@@ -98,7 +123,7 @@ export async function POST(request: NextRequest) {
         success: true,
         data: {
           status: 'ALREADY_ENTERED',
-          student: reg,
+          student: formattedStudent,
           is_test: isTest,
           entry_details: {
             entry_time: existingEntry.entry_time || existingEntry.scanned_at,
@@ -126,66 +151,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const timestamp = new Date().toISOString();
-
-    // 6. Atomically insert entry record using only existing schema columns
-    const { data: newEntry, error: insertErr } = await supabaseAdmin
-      .from('entries')
-      .insert({
-        registration_id: reg.id,
-        entry_status: isTest ? 'TEST_ENTERED' : 'ENTERED',
-        scanned_by: admin.name || admin.email || 'Admin Staff',
-        scanner_device: scanner_device || (isTest ? 'Admin Test Console' : 'Mobile QR Terminal'),
-        scanned_at: timestamp,
-        entry_time: timestamp
-      })
-      .select()
-      .single();
-
-    if (insertErr) {
-      console.error('Verify entry insert error:', insertErr);
-      
-      // Secondary check for race condition unique violation
-      if (insertErr.code === '23505') {
-        return NextResponse.json({
-          success: true,
-          data: {
-            status: 'ALREADY_ENTERED',
-            student: reg,
-            is_test: isTest,
-            entry_details: {
-              entry_time: timestamp,
-              scanned_by: admin.name || admin.email || 'Admin Staff',
-              scanner_device: scanner_device || 'Mobile QR Terminal'
-            }
-          }
-        });
-      }
-
-      const isSchemaError = insertErr.message?.includes('column') || insertErr.code === 'PGRST204';
-      const diagnosticMsg = isSchemaError 
-        ? `Database schema out-of-sync: ${insertErr.message}. Ensure you have executed the latest SQL migrations in your Supabase SQL Editor.`
-        : `Database insertion failed: ${insertErr.message} (Code: ${insertErr.code}).`;
-
-      return NextResponse.json({
-        success: false,
-        error: { 
-          code: 'DATABASE_ERROR', 
-          message: diagnosticMsg
-        }
-      }, { status: 500 });
-    }
-
     return NextResponse.json({
       success: true,
       data: {
-        status: 'MARKED',
-        student: reg,
-        is_test: isTest,
-        entry_details: {
-          entry_time: timestamp,
-          scanned_by: admin.name || admin.email
-        }
+        status: 'PENDING_CONFIRMATION',
+        student: formattedStudent,
+        is_test: isTest
       }
     });
 

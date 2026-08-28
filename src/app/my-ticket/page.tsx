@@ -96,6 +96,20 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
       paymentMethod = pay.payment_method;
     }
 
+    // Generate signed URL for photo if it exists
+    const defaultPhotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a855f7'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>";
+    let photoUrl = defaultPhotoUrl;
+    if (reg.photo_path) {
+      if (reg.photo_path.startsWith('mock-photos/')) {
+        photoUrl = defaultPhotoUrl;
+      } else {
+        const { data: signedData } = await supabaseAdmin.storage
+          .from('student-photos')
+          .createSignedUrl(reg.photo_path, 3600);
+        photoUrl = signedData?.signedUrl || defaultPhotoUrl;
+      }
+    }
+
     const isEntered = entryStatus === 'ENTERED' || entryStatus === 'TEST_ENTERED';
 
     return (
@@ -190,6 +204,15 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
               </div>
 
               <div className="w-full border-t border-dashed border-white/10 print-border-dashed" />
+
+              {/* Student Photo */}
+              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative">
+                <img 
+                  src={photoUrl} 
+                  alt="Student Attendee Photo" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
 
               <div className="text-center w-full">
                 <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold print-text-slate">Student Attendee</span>

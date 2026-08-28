@@ -29,6 +29,9 @@ export const registerSchema = z.object({
     .string()
     .trim()
     .email("Please enter a valid email address."),
+  photo_path: z
+    .string()
+    .min(1, "Please upload your photo."),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

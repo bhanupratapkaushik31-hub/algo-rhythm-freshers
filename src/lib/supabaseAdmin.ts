@@ -135,6 +135,8 @@ class MockAdminSupabaseClient {
           result = mockDb.mockCreatePayment(this.writeData);
         } else if (this.tableName === 'entries') {
           result = mockDb.mockCreateEntry(this.writeData);
+        } else if (this.tableName === 'entry_logs') {
+          result = mockDb.mockCreateEntryLog(this.writeData);
         }
       } else if (this.isUpdate) {
         if (this.tableName === 'registrations') {
@@ -220,6 +222,12 @@ class MockAdminSupabaseClient {
             result = mockDb.mockGetEntryByRegId(this.filterValue);
           } else if (!this.filterField) {
             count = db.entries.length;
+          }
+        } else if (this.tableName === 'entry_logs') {
+          if (this.filterField === 'registration_id') {
+            result = db.entry_logs.filter((l: any) => l.registration_id === this.filterValue);
+          } else {
+            result = db.entry_logs;
           }
         } else if (this.tableName === 'admins') {
           result = {

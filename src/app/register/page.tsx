@@ -14,7 +14,8 @@ import {
   Sparkles, 
   ArrowLeft, 
   Loader2, 
-  AlertTriangle 
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import { registerSchema, RegisterInput } from '@/lib/schemas';
@@ -26,6 +27,13 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [portalClosed, setPortalClosed] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
+
+  // Photo uploading states
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [photoMimeType, setPhotoMimeType] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // 1. Check registration portal status on mount
   useEffect(() => {
@@ -40,10 +48,65 @@ export default function Register() {
       .finally(() => setCheckingStatus(false));
   }, []);
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhotoError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/jpg'].includes(file.type.toLowerCase())) {
+      setPhotoError('Please select a valid image file (JPG, JPEG, or PNG).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Compress using Canvas
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // Compress to 70% quality JPEG
+          setPhotoPreview(compressedBase64);
+          setPhotoBase64(compressedBase64);
+          setPhotoMimeType('image/jpeg');
+        } else {
+          // Fallback if canvas context fails
+          setPhotoPreview(event.target?.result as string);
+          setPhotoBase64(event.target?.result as string);
+          setPhotoMimeType(file.type);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // 2. Initialize React Hook Form with Zod Resolver
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -55,14 +118,45 @@ export default function Register() {
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
+    if (!photoBase64) {
+      setPhotoError('Please upload your photo before checking out.');
+      return;
+    }
+
     setSubmitting(true);
     setServerError(null);
+    setPhotoUploading(true);
 
     try {
+      // 1. Upload photo to secure storage bucket
+      const uploadResponse = await fetch('/api/register/upload-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileBase64: photoBase64,
+          mimeType: photoMimeType
+        })
+      });
+
+      const uploadRes = await uploadResponse.json();
+      setPhotoUploading(false);
+
+      if (!uploadResponse.ok || !uploadRes.success) {
+        setServerError(uploadRes.error?.message || 'Failed to upload photo. Please try again.');
+        setSubmitting(false);
+        return;
+      }
+
+      const photoPath = uploadRes.data.photo_path;
+
+      // 2. Submit registration
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          photo_path: photoPath
+        }),
       });
 
       const res = await response.json();
@@ -81,6 +175,7 @@ export default function Register() {
       console.error('Registration submission error:', err);
       setServerError('Network error. Please check your internet connection.');
       setSubmitting(false);
+      setPhotoUploading(false);
     }
   };
 
@@ -279,6 +374,63 @@ export default function Register() {
                   </div>
                   {errors.school_name && (
                     <p className="text-[10px] text-red-400 font-semibold">{errors.school_name.message}</p>
+                  )}
+                </div>
+
+                {/* 8. Photo Upload Field */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Upload Your Photo *</label>
+                  <div className="relative">
+                    {!photoPreview ? (
+                      <div className="border-2 border-dashed border-white/10 hover:border-purple-500/30 rounded-xl p-6 transition-all text-center flex flex-col items-center justify-center gap-2 relative">
+                        <input
+                          type="file"
+                          accept="image/png, image/jpeg, image/jpg"
+                          onChange={handlePhotoChange}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          required
+                        />
+                        <div className="p-3 bg-purple-500/10 text-purple-400 rounded-lg">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-200">Click or Drag to Upload Photo</p>
+                          <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wide">JPG, JPEG, or PNG accepted</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-4">
+                        <div className="w-24 h-24 rounded-lg overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center relative shrink-0">
+                          <img
+                            src={photoPreview}
+                            alt="Student photo preview"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="text-center sm:text-left space-y-2">
+                          <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 justify-center sm:justify-start">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Photo Prepared Successfully
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPhotoPreview(null);
+                              setPhotoBase64(null);
+                              setPhotoMimeType(null);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-colors cursor-pointer"
+                          >
+                            Remove / Replace Photo
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {photoError && (
+                    <p className="text-[10px] text-red-400 font-semibold">{photoError}</p>
                   )}
                 </div>
 

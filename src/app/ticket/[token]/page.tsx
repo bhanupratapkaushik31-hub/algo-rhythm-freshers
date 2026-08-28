@@ -1,8 +1,9 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
-import { Calendar, Clock, MapPin, Check, ShieldCheck, Ticket } from 'lucide-react';
+import { Calendar, Clock, MapPin, Check, ShieldCheck, Ticket, ArrowLeft } from 'lucide-react';
 import QRCode from 'qrcode';
 import TicketActions from './TicketActions';
 
@@ -83,9 +84,38 @@ export default async function TicketPage({ params }: TicketPageProps) {
     console.error('Failed to generate QR code:', qrErr);
   }
 
+  // Generate signed URL for photo if it exists
+  const defaultPhotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a855f7'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>";
+  let photoUrl = defaultPhotoUrl;
+  if (reg.photo_path) {
+    if (reg.photo_path.startsWith('mock-photos/')) {
+      photoUrl = defaultPhotoUrl;
+    } else {
+      const { data: signedData } = await supabaseAdmin.storage
+        .from('student-photos')
+        .createSignedUrl(reg.photo_path, 3600);
+      photoUrl = signedData?.signedUrl || defaultPhotoUrl;
+    }
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 print:p-0 print:bg-white">
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 print:p-0 print:bg-white relative">
       
+      {/* Background blobs for premium depth (hidden during print) */}
+      <div className="absolute top-[10%] left-[5%] w-[80px] h-[80px] bg-purple-500/10 rounded-full blur-xl animate-float-slow pointer-events-none print:hidden" />
+      <div className="absolute bottom-[20%] right-[5%] w-[100px] h-[100px] bg-pink-500/10 rounded-full blur-xl animate-float-slow pointer-events-none print:hidden" />
+
+      {/* Floating navbar/header (hidden during print) */}
+      <header className="w-full max-w-sm flex justify-between items-center print:hidden mb-6">
+        <Link href="/" className="font-extrabold tracking-wide text-sm text-gradient-indigo-purple font-outfit">
+          ALGO-RHYTHM
+        </Link>
+        <Link href="/" className="text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1.5">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Home
+        </Link>
+      </header>
+
       {/* Printable CSS override styling */}
       <style>{`
         @media print {
@@ -162,6 +192,15 @@ export default async function TicketPage({ params }: TicketPageProps) {
 
             {/* Dashed Separator */}
             <div className="w-full border-t border-dashed border-white/10 print-border-dashed" />
+
+            {/* Student Photo */}
+            <div className="w-24 h-24 rounded-2xl overflow-hidden border border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative">
+              <img 
+                src={photoUrl} 
+                alt="Student Attendee Photo" 
+                className="w-full h-full object-cover"
+              />
+            </div>
 
             {/* Student Name */}
             <div className="text-center w-full">

@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
             modeling: data.modeling,
             phone: data.phone,
             email: data.email,
+            photo_path: data.photo_path,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingReg.id)
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
         modeling: data.modeling,
         phone: data.phone,
         email: data.email,
+        photo_path: data.photo_path,
         ticket_token: ticketToken,
         registration_status: 'PENDING'
       })

@@ -7,6 +7,7 @@ interface MockDbSchema {
   registrations: any[];
   payments: any[];
   entries: any[];
+  entry_logs: any[];
   settings: Record<string, any>;
 }
 
@@ -18,6 +19,7 @@ export function readMockDb(): MockDbSchema {
         registrations: [],
         payments: [],
         entries: [],
+        entry_logs: [],
         settings: {
           registration_status: { open: true },
           event_details: {
@@ -34,12 +36,17 @@ export function readMockDb(): MockDbSchema {
       return initialDb;
     }
     const content = fs.readFileSync(MOCK_DB_FILE, 'utf-8');
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    if (!parsed.entry_logs) {
+      parsed.entry_logs = [];
+    }
+    return parsed;
   } catch (err) {
     console.error('Error reading mock DB:', err);
-    return { registrations: [], payments: [], entries: [], settings: {} };
+    return { registrations: [], payments: [], entries: [], entry_logs: [], settings: {} };
   }
 }
+
 
 // 2. Helper to write JSON file
 export function writeMockDb(db: MockDbSchema) {
@@ -285,3 +292,17 @@ export function mockListRegistrations(params: any) {
     pages: Math.ceil(count / limit)
   };
 }
+
+export function mockCreateEntryLog(data: any) {
+  const db = readMockDb();
+  const newLog = {
+    id: Math.random().toString(36).substring(2, 15),
+    ...data,
+    scanned_at: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  };
+  db.entry_logs.push(newLog);
+  writeMockDb(db);
+  return newLog;
+}
+

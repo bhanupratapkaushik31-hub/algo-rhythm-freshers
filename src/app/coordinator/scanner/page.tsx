@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { EVENT_CONFIG } from '@/config/event';
 
-type ScanResultState = 'SCANNING' | 'VERIFYING' | 'MARKED' | 'ALREADY_ENTERED' | 'INVALID' | 'UNPAID';
+type ScanResultState = 'SCANNING' | 'VERIFYING' | 'MARKED' | 'ALREADY_ENTERED' | 'INVALID' | 'UNPAID' | 'PENDING_CONFIRMATION';
 
 interface ScannedStudent {
   id: string;
@@ -30,6 +30,7 @@ interface ScannedStudent {
   year: '1st Year' | '2nd Year';
   school_name: string;
   modeling: 'Yes' | 'No';
+  photo_url?: string;
 }
 
 export default function CoordinatorScanner() {
@@ -43,6 +44,8 @@ export default function CoordinatorScanner() {
   const [entryDetails, setEntryDetails] = useState<any>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  const [markingEntry, setMarkingEntry] = useState(false);
+  const [isTestModeScanned, setIsTestModeScanned] = useState(false);
   
   // History & Statistics
   const [myStats, setMyStats] = useState({ total_scans: 0, recent_scans: [] as any[] });
@@ -251,13 +254,58 @@ export default function CoordinatorScanner() {
       const resultData = res.data;
       setStudent(resultData.student);
       setEntryDetails(resultData.entry_details);
+      setIsTestModeScanned(!!resultData.is_test);
 
       if (resultData.status === 'ALREADY_ENTERED') {
         triggerHaptic([150, 100, 150]);
         playBeep('already');
         setScanState('ALREADY_ENTERED');
+        // Do not auto-reset: coordinator needs to verify re-entry or click dismiss
+      } else if (resultData.status === 'PENDING_CONFIRMATION') {
+        setScanState('PENDING_CONFIRMATION');
+        // Wait for manual coordinator visual verification
+      }
+
+    } catch (err) {
+      console.error(err);
+      triggerHaptic(300);
+      playBeep('error');
+      setScanState('INVALID');
+      setErrorMsg('Network connectivity error.');
+      setTimeout(resetScanner, 3500);
+    }
+  };
+
+  // Mark entry / re-entry helper
+  const handleMarkEntry = async (actionType: 'ENTRY' | 'RE_ENTRY') => {
+    if (!student) return;
+    setMarkingEntry(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/entry/mark', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({
+          registration_id: student.id,
+          action: actionType,
+          is_test: isTestModeScanned,
+          scanner_device: 'Mobile QR Terminal'
+        }),
+      });
+
+      const res = await response.json();
+
+      if (!response.ok || !res.success) {
+        triggerHaptic(300);
+        playBeep('error');
+        setScanState('INVALID');
+        setErrorMsg(res.error?.message || 'Failed to mark entry.');
         setTimeout(resetScanner, 3500);
-      } else if (resultData.status === 'MARKED') {
+      } else {
         triggerHaptic([80, 50, 80]);
         playBeep('success');
         setScanState('MARKED');
@@ -268,7 +316,6 @@ export default function CoordinatorScanner() {
         // Auto reset scanner after 3 seconds for fast checking
         setTimeout(resetScanner, 3000);
       }
-
     } catch (err) {
       console.error(err);
       triggerHaptic(300);
@@ -276,6 +323,8 @@ export default function CoordinatorScanner() {
       setScanState('INVALID');
       setErrorMsg('Network connectivity error.');
       setTimeout(resetScanner, 3500);
+    } finally {
+      setMarkingEntry(false);
     }
   };
 
@@ -390,26 +439,96 @@ export default function CoordinatorScanner() {
           </div>
         )}
 
+        {/* Verification Screen: PENDING_CONFIRMATION */}
+        {scanState === 'PENDING_CONFIRMATION' && student && (
+          <div className="w-full glass-card rounded-3xl overflow-hidden border-purple-500/25 shadow-purple-500/5 shadow-2xl relative animate-fade-in">
+            <div className="h-2 w-full bg-purple-500" />
+            <div className="p-6 space-y-5 text-center flex flex-col items-center">
+              
+              <span className="text-[10px] uppercase tracking-wider text-purple-400 font-extrabold bg-purple-500/10 px-3.5 py-1 rounded-full border border-purple-500/10 flex items-center gap-1.5 animate-pulse">
+                <CheckCircle className="w-4 h-4 text-purple-400" />
+                ✓ TICKET FOUND
+              </span>
+
+              {/* LARGE STUDENT PHOTO */}
+              <div className="w-48 h-48 rounded-2xl overflow-hidden border-2 border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
+                <img 
+                  src={student.photo_url} 
+                  alt="Scanned Student Attendee" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
+              <div>
+                <h3 className="text-xl font-black font-outfit text-white tracking-tight leading-tight">{student.full_name}</h3>
+                <p className="text-slate-300 text-xs font-bold mt-1.5 uppercase tracking-wider">{student.registration_number}</p>
+                <p className="text-slate-500 text-[10px] uppercase tracking-wider mt-0.5">{student.year} &bull; {student.school_name}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 w-full text-xs pt-1">
+                <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 block">Payment Status</span>
+                  <span className="font-extrabold text-emerald-400">✓ PAID</span>
+                </div>
+                <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 block">Entry Status</span>
+                  <span className="font-extrabold text-yellow-500">NOT ENTERED</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="w-full grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
+                <button
+                  onClick={resetScanner}
+                  disabled={markingEntry}
+                  className="w-full inline-flex justify-center items-center py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-red-500/10"
+                >
+                  Reject Entry
+                </button>
+                <button
+                  onClick={() => handleMarkEntry('ENTRY')}
+                  disabled={markingEntry}
+                  className="w-full inline-flex justify-center items-center gap-1.5 py-3 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-purple-500/10"
+                >
+                  {markingEntry ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Verify & Mark Entry'}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {/* Marked/Success Check-in screen */}
         {scanState === 'MARKED' && student && (
-          <div className="w-full glass-card rounded-3xl overflow-hidden border-emerald-500/20 shadow-emerald-500/5 shadow-2xl relative">
+          <div className="w-full glass-card rounded-3xl overflow-hidden border-emerald-500/20 shadow-emerald-500/5 shadow-2xl relative animate-fade-in">
             <div className="h-2 w-full bg-emerald-500" />
-            <div className="p-8 space-y-6 text-center py-10">
-              <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-2">
-                <CheckCircle className="w-8 h-8" />
+            <div className="p-6 space-y-5 text-center flex flex-col items-center py-8">
+              <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-6 h-6" />
               </div>
+              
+              <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-extrabold bg-emerald-500/10 px-3.5 py-1 rounded-full border border-emerald-500/10">
+                ✓ ENTRY MARKED SUCCESSFULLY
+              </span>
+
+              {/* STUDENT PHOTO */}
+              <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
+                <img 
+                  src={student.photo_url} 
+                  alt="Scanned Student Attendee" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold bg-emerald-500/10 px-3.5 py-1 rounded-full border border-emerald-500/10">
-                  ✓ ENTRY VERIFIED
-                </span>
-                <h3 className="text-2xl font-black font-outfit text-white mt-4">{student.full_name}</h3>
-                <p className="text-slate-300 text-xs font-bold mt-1 uppercase tracking-wider">{student.registration_number}</p>
+                <h3 className="text-xl font-black font-outfit text-white mt-1">{student.full_name}</h3>
+                <p className="text-slate-300 text-xs font-bold mt-1.5 uppercase tracking-wider">{student.registration_number}</p>
                 <p className="text-slate-400 text-[10px] mt-0.5">{student.year} &bull; {student.school_name}</p>
               </div>
 
-              <div className="pt-4 border-t border-white/5 space-y-1">
+              <div className="pt-4 border-t border-white/5 w-full">
                 <p className="text-purple-300 text-xs font-bold uppercase tracking-wide">Welcome to ALGO-RHYTHM 2K26 🎉</p>
-                <p className="text-slate-500 text-[9px] uppercase">Scanned by: {coordinator.name} &bull; {new Date().toLocaleTimeString()}</p>
+                <p className="text-slate-500 text-[9px] uppercase mt-1">Scanned by: {coordinator.name} &bull; {new Date().toLocaleTimeString()}</p>
               </div>
             </div>
           </div>
@@ -417,23 +536,32 @@ export default function CoordinatorScanner() {
 
         {/* Already Entered screen */}
         {scanState === 'ALREADY_ENTERED' && student && entryDetails && (
-          <div className="w-full glass-card rounded-3xl overflow-hidden border-red-500/20 shadow-red-500/5 shadow-2xl relative">
+          <div className="w-full glass-card rounded-3xl overflow-hidden border-red-500/25 shadow-red-500/5 shadow-2xl relative animate-fade-in">
             <div className="h-2 w-full bg-red-500" />
-            <div className="p-8 space-y-6 text-center">
-              <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-8 h-8" />
-              </div>
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded-full border border-red-500/10">
-                  ⚠️ ALREADY ENTERED
-                </span>
-                <h3 className="text-xl font-bold font-outfit text-white mt-4">{student.full_name}</h3>
-                <p className="text-slate-400 text-xs mt-0.5">{student.registration_number}</p>
+            <div className="p-6 space-y-5 text-center flex flex-col items-center">
+              
+              <span className="text-[10px] uppercase tracking-wider text-red-400 font-extrabold bg-red-500/10 px-3.5 py-1 rounded-full border border-red-500/10 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                ⚠️ ALREADY CHECKED IN
+              </span>
+
+              {/* STUDENT PHOTO */}
+              <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-red-500/20 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
+                <img 
+                  src={student.photo_url} 
+                  alt="Scanned Student Attendee" 
+                  className="w-full h-full object-cover"
+                />
               </div>
 
-              <div className="space-y-2 text-xs bg-red-950/10 border border-red-500/15 p-4 rounded-xl text-left text-red-200">
+              <div>
+                <h3 className="text-lg font-bold font-outfit text-white tracking-tight leading-tight">{student.full_name}</h3>
+                <p className="text-slate-400 text-xs mt-1 font-semibold uppercase tracking-wider">{student.registration_number}</p>
+              </div>
+
+              <div className="space-y-2 text-xs bg-red-950/15 border border-red-500/15 p-4 rounded-xl text-left text-red-200 w-full animate-fade-in">
                 <div className="flex justify-between border-b border-red-500/15 pb-1 mb-1 font-bold text-[9px] uppercase tracking-wider">
-                  <span>Entry Log Record</span>
+                  <span>Original Entry Check-In Record</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-red-400/70">Check-in time:</span>
@@ -443,9 +571,30 @@ export default function CoordinatorScanner() {
                   <span className="text-red-400/70">Scanned By:</span>
                   <span className="font-semibold truncate max-w-[150px]">{entryDetails.scanned_by}</span>
                 </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-red-400/70">Device / Portal:</span>
+                  <span className="font-semibold text-right truncate max-w-[150px]">{entryDetails.scanner_device}</span>
+                </div>
               </div>
               
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Duplicate Scan Blocked</p>
+              {/* Action Buttons */}
+              <div className="w-full grid grid-cols-2 gap-3 pt-2">
+                <button
+                  onClick={resetScanner}
+                  disabled={markingEntry}
+                  className="w-full inline-flex justify-center items-center py-3 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/5"
+                >
+                  Dismiss / Reset
+                </button>
+                <button
+                  onClick={() => handleMarkEntry('RE_ENTRY')}
+                  disabled={markingEntry}
+                  className="w-full inline-flex justify-center items-center gap-1.5 py-3 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-amber-500/10"
+                >
+                  {markingEntry ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Allow Re-Entry'}
+                </button>
+              </div>
+
             </div>
           </div>
         )}
