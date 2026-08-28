@@ -88,8 +88,8 @@ export default function Register() {
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
       
-      {/* Back button */}
-      <div className="w-full max-w-2xl mb-6">
+      {/* Back button and My Ticket link */}
+      <div className="w-full max-w-2xl mb-6 flex justify-between items-center">
         <Link 
           href="/" 
           className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors text-xs font-semibold uppercase tracking-wider"
@@ -97,7 +97,14 @@ export default function Register() {
           <ArrowLeft className="w-4 h-4" />
           Back to Event
         </Link>
+        <Link 
+          href="/my-ticket" 
+          className="text-xs font-semibold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors"
+        >
+          My Ticket
+        </Link>
       </div>
+
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

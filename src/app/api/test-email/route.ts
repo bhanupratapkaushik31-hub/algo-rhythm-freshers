@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const gmailUser = process.env.GMAIL_USER || 'scailpu@gmail.com';
-    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
     const oauthClientId = process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_OAUTH_CLIENT_ID;
     const oauthClientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_OAUTH_CLIENT_SECRET;
     const oauthRefreshToken = process.env.GOOGLE_REFRESH_TOKEN || process.env.GMAIL_OAUTH_REFRESH_TOKEN;

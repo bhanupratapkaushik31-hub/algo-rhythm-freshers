@@ -3,7 +3,7 @@ import { supabaseAdmin } from './supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
 
 const gmailUser = process.env.GMAIL_USER || 'scailpu@gmail.com';
-const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
 
 const oauthClientId = process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_OAUTH_CLIENT_ID;
 const oauthClientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_OAUTH_CLIENT_SECRET;
@@ -635,4 +635,131 @@ export async function sendRefundEmail(details: {
     return false;
   }
 }
+
+export async function sendMagicLinkEmail(email: string, name: string, link: string): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn('Gmail sending configuration is missing. Magic link email skipped.');
+    return false;
+  }
+
+  try {
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Access Your ALGO-RHYTHM 2K26 Tickets 🎉</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d0620;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+          }
+          .header {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+            padding: 30px;
+            text-align: center;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: 2px;
+            color: #ffffff;
+            text-transform: uppercase;
+            font-weight: 800;
+          }
+          .content {
+            padding: 30px;
+            background-color: #120b2e;
+            color: #ffffff;
+          }
+          .welcome {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #ec4899;
+            font-weight: 600;
+          }
+          .btn-container {
+            text-align: center;
+            margin: 30px 0;
+          }
+          .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+            color: #ffffff !important;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 14px;
+          }
+          .footer {
+            background-color: #0b051c;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>ALGO-RHYTHM</h1>
+            <p>CSE Fresher Party 2026 🎉</p>
+          </div>
+          <div class="content">
+            <p class="welcome">Hello ${name},</p>
+            <p>We received a request to retrieve your entry ticket for <strong>ALGO-RHYTHM – CSE Fresher Party 2026</strong>.</p>
+            <p>Click the button below to verify your email and directly access your ticket on the website. This link will expire in 15 minutes.</p>
+            
+            <div class="btn-container">
+              <a href="${link}" class="btn">Access My Ticket</a>
+            </div>
+            
+            <p style="font-size: 12px; color: rgba(255, 255, 255, 0.5); text-align: center; margin-top: 30px;">
+              If you did not request this, you can safely ignore this email. Your ticket remains secure.
+            </p>
+          </div>
+          <div class="footer">
+            &copy; 2026 School of Computing and AI. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const mailOptions = {
+      from: `ALGO-RHYTHM <${gmailUser}>`,
+      to: email,
+      subject: `Retrieve Your ALGO-RHYTHM 2K26 Tickets 🎉`,
+      html: htmlContent,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Gmail Service] Magic link verification sent to ${email}. Msg ID: ${info.messageId}`);
+    return true;
+
+  } catch (emailErr) {
+    console.error(`Gmail sending error for magic link verification:`, emailErr);
+    return false;
+  }
+}
+
 

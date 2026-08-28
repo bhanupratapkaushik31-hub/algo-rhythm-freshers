@@ -12,8 +12,11 @@ function SuccessContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
-  // Trigger confetti explosion on page load
+  // Trigger confetti explosion and set session cookie on page load
   useEffect(() => {
+    if (token) {
+      document.cookie = `student_ticket_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax; Secure`;
+    }
     confetti({
       particleCount: 120,
       spread: 70,
@@ -36,7 +39,7 @@ function SuccessContent() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [token]);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
@@ -75,10 +78,16 @@ function SuccessContent() {
         </div>
 
         {/* 4. Instructions */}
-        <p className="text-xs text-slate-400 leading-relaxed mb-8 max-w-xs mx-auto">
-          We have sent your entry ticket details to your registered email address. 
-          You can also click the button below to view, download, or print your ticket now.
+        <p className="text-xs text-slate-400 leading-relaxed mb-6 max-w-xs mx-auto">
+          We have sent your entry ticket details to your registered email address.
         </p>
+
+        {/* Can't find ticket help text */}
+        <div className="bg-white/5 border border-white/5 rounded-xl p-4 mb-6 text-center max-w-xs mx-auto">
+          <p className="text-xs font-bold text-slate-300">Can't find your ticket later?</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">You can always retrieve it from My Ticket.</p>
+        </div>
+
 
         {/* 5. View Ticket Button */}
         {token ? (

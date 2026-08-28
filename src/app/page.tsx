@@ -90,6 +90,26 @@ export default function Home() {
       <div className="absolute top-[20%] left-[5%] w-[80px] h-[80px] bg-purple-500/10 rounded-full blur-xl animate-float-slow hidden md:block" />
       <div className="absolute top-[50%] right-[5%] w-[120px] h-[120px] bg-pink-500/10 rounded-full blur-2xl animate-float-medium hidden md:block" />
 
+      {/* Subtle Floating Header */}
+      <header className="w-full max-w-6xl mx-auto px-6 py-4 flex justify-between items-center relative z-20">
+        <Link href="/" className="font-extrabold tracking-wide text-lg text-gradient-indigo-purple font-outfit select-none">
+          ALGO-RHYTHM
+        </Link>
+        <nav className="flex items-center gap-6">
+          <Link href="/" className="text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white transition-colors">
+            Home
+          </Link>
+          {isRegOpen && (
+            <Link href="/register" className="text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white transition-colors">
+              Register
+            </Link>
+          )}
+          <Link href="/my-ticket" className="text-xs font-semibold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors">
+            My Ticket
+          </Link>
+        </nav>
+      </header>
+
       {/* Hero Section */}
       <section className="relative min-h-[90vh] flex flex-col items-center justify-center text-center px-4 pt-16 pb-12">
         <motion.div
