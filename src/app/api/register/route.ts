@@ -21,6 +21,15 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parseResult.data;
+    if (!data.photo_path) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Please upload your photo before checking out.'
+        }
+      }, { status: 400 });
+    }
 
     // 2. Check if registration is open
     const { data: statusSetting, error: settingsError } = await supabaseAdmin

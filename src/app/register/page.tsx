@@ -90,11 +90,15 @@ export default function Register() {
           setPhotoPreview(compressedBase64);
           setPhotoBase64(compressedBase64);
           setPhotoMimeType('image/jpeg');
+          setValue('photo_path', 'prepared');
+          setPhotoError(null);
         } else {
           // Fallback if canvas context fails
           setPhotoPreview(event.target?.result as string);
           setPhotoBase64(event.target?.result as string);
           setPhotoMimeType(file.type);
+          setValue('photo_path', 'prepared');
+          setPhotoError(null);
         }
       };
       img.src = event.target?.result as string;
@@ -113,6 +117,7 @@ export default function Register() {
     defaultValues: {
       school_name: "School of Computing and Artificial Intelligence",
       modeling: "No",
+      photo_path: "",
     }
   });
 
@@ -241,8 +246,16 @@ export default function Register() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={handleSubmit(onSubmit, (errs) => console.warn('[Register] Form validation errors:', errs))} className="space-y-6">
               
+              {/* Form Validation Alert */}
+              {Object.keys(errors).length > 0 && !serverError && (
+                <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-xl text-amber-200 text-xs flex gap-3 items-center">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                  <span>Please check the form: Some required fields are missing or invalid.</span>
+                </div>
+              )}
+
               {/* Server Error Message */}
               <AnimatePresence>
                 {serverError && (
@@ -420,6 +433,7 @@ export default function Register() {
                               setPhotoPreview(null);
                               setPhotoBase64(null);
                               setPhotoMimeType(null);
+                              setValue('photo_path', '');
                             }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-colors cursor-pointer"
                           >
@@ -429,8 +443,8 @@ export default function Register() {
                       </div>
                     )}
                   </div>
-                  {photoError && (
-                    <p className="text-[10px] text-red-400 font-semibold">{photoError}</p>
+                  {(photoError || errors.photo_path?.message) && (
+                    <p className="text-[10px] text-red-400 font-semibold">{photoError || errors.photo_path?.message}</p>
                   )}
                 </div>
 
