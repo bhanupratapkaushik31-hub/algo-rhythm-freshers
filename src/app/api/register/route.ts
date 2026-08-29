@@ -3,9 +3,23 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { registerSchema } from '@/lib/schemas';
 import { EVENT_CONFIG } from '@/config/event';
 import crypto from 'crypto';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 
 export async function POST(request: NextRequest) {
   try {
+    // 0. Rate limiting (max 10 registrations per minute per IP)
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(clientIp, 'register', { limit: 10, windowMs: 60000 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Too many registration attempts. Please wait a minute before trying again.'
+        }
+      }, { status: 429 });
+    }
+
     const body = await request.json();
     
     // 1. Validate Input

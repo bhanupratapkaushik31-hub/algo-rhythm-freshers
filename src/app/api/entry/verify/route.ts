@@ -96,7 +96,26 @@ export async function POST(request: NextRequest) {
         success: false,
         error: {
           code: 'CANCELLED_TICKET',
-          message: 'This ticket has been cancelled or refunded.'
+          message: 'This ticket has been cancelled.'
+        },
+        data: { student: reg }
+      }, { status: 400 });
+    }
+
+    // Check payment record for refunded state
+    const { data: payments } = await supabaseAdmin
+      .from('payments')
+      .select('payment_status, refund_status')
+      .eq('registration_id', reg.id)
+      .order('created_at', { ascending: false });
+
+    const latestPay = payments?.[0];
+    if (latestPay?.refund_status === 'REFUNDED') {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'CANCELLED_TICKET',
+          message: 'This ticket has been refunded and is no longer valid for entry.'
         },
         data: { student: reg }
       }, { status: 400 });

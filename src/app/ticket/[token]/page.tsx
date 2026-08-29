@@ -248,7 +248,7 @@ export default async function TicketPage({ params }: TicketPageProps) {
                 Payment Status: PAID
               </div>
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold print-text-slate">
-                Payment Method: {paymentMethod === 'TEST_SIMULATOR' ? 'TEST SIMULATOR' : 'RAZORPAY'}
+                Payment Method: {paymentMethod && paymentMethod !== 'TEST_SIMULATOR' ? paymentMethod.toUpperCase() : 'ONLINE (RAZORPAY)'}
               </div>
             </div>
 

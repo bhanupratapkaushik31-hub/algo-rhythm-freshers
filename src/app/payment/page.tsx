@@ -30,9 +30,6 @@ function PaymentContent() {
   const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
   const [alreadyPaidToken, setAlreadyPaidToken] = useState<string | null>(null);
 
-  // Simulator specific states
-  const [simulatorStatus, setSimulatorStatus] = useState<'IDLE' | 'FAILED'>('IDLE');
-  const [simulatorSubmitting, setSimulatorSubmitting] = useState(false);
 
   const [paymentStatus, setPaymentStatus] = useState<string>('PENDING');
   const [checkingStatus, setCheckingStatus] = useState(true);
@@ -260,65 +257,6 @@ function PaymentContent() {
     }
   };
 
-  // Simulator Handlers
-  const handleSimulatedSuccess = async () => {
-    if (!paymentData || simulatorSubmitting) return;
-    setSimulatorSubmitting(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/payment/test-success', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_order_id: paymentData.order_id }),
-      });
-
-      const res = await response.json();
-
-      if (!response.ok || !res.success) {
-        setError(res.error?.message || 'Simulated payment processing failed.');
-        setSimulatorSubmitting(false);
-        return;
-      }
-
-      router.push(`/success?token=${res.data.ticket_token}`);
-
-    } catch (err) {
-      console.error(err);
-      setError('Network error during simulated payment processing.');
-      setSimulatorSubmitting(false);
-    }
-  };
-
-  const handleSimulatedFailure = async () => {
-    if (!paymentData || simulatorSubmitting) return;
-    setSimulatorSubmitting(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/payment/test-failure', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_order_id: paymentData.order_id }),
-      });
-
-      const res = await response.json();
-
-      if (!response.ok || !res.success) {
-        setError(res.error?.message || 'Failed to simulate payment failure.');
-        setSimulatorSubmitting(false);
-        return;
-      }
-
-      setSimulatorStatus('FAILED');
-      setSimulatorSubmitting(false);
-
-    } catch (err) {
-      console.error(err);
-      setError('Network error during simulated payment failure.');
-      setSimulatorSubmitting(false);
-    }
-  };
 
   const handleCancelPayment = () => {
     router.push('/register');
@@ -499,39 +437,6 @@ function PaymentContent() {
               </div>
             )}
 
-            {/* Developer Test Simulator Controls (if in simulator mode) */}
-            {paymentData.payment_mode === 'simulator' && (
-              <div className="mb-6 p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>Developer Test Mode (Simulator Active)</span>
-                </div>
-                <p className="text-[11px] text-slate-300">
-                  You can simulate successful or failed payment without debiting a real account:
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSimulatedSuccess}
-                    disabled={simulatorSubmitting}
-                    className="flex-1 py-2.5 px-3 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer text-center"
-                  >
-                    {simulatorSubmitting ? 'Processing...' : 'Simulate Success'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSimulatedFailure}
-                    disabled={simulatorSubmitting}
-                    className="flex-1 py-2.5 px-3 bg-red-600/80 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer text-center"
-                  >
-                    Simulate Failure
-                  </button>
-                </div>
-                {simulatorStatus === 'FAILED' && (
-                  <p className="text-[10px] text-red-400 font-semibold">Simulated failure recorded in database.</p>
-                )}
-              </div>
-            )}
 
             {/* Action buttons */}
             <button

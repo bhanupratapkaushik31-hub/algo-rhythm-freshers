@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
+
 function normalizePhoneNumber(phoneInput: string): string {
   // Strip all non-digit characters
   const digits = phoneInput.replace(/\D/g, '');
@@ -15,6 +17,16 @@ function normalizePhoneNumber(phoneInput: string): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // 0. Rate limiting (max 10 requests per minute per IP to prevent phone number enumeration)
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(clientIp, 'ticket-retrieve', { limit: 10, windowMs: 60000 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many search attempts. Please wait a minute before trying again.' }
+      }, { status: 429 });
+    }
+
     const body = await request.json();
     const { phone } = body;
 

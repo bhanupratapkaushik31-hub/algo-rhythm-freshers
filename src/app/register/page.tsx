@@ -58,6 +58,13 @@ export default function Register() {
       return;
     }
 
+    // Guard against excessively huge files before memory reading
+    const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setPhotoError('Selected photo is too large (exceeds 5MB). Please choose a smaller photo.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();

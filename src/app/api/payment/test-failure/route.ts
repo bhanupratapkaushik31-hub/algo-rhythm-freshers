@@ -3,15 +3,15 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Guard against non-simulator mode
-    if (process.env.PAYMENT_MODE !== 'simulator') {
+    // 1. Guard: Strictly permanently disabled in production
+    if (process.env.NODE_ENV === 'production' || process.env.PAYMENT_MODE !== 'simulator') {
       return NextResponse.json({
         success: false,
         error: {
-          code: 'SIMULATOR_DISABLED',
-          message: 'Payment simulator is only available in development/test environments.'
+          code: 'FORBIDDEN',
+          message: 'Payment simulator is permanently disabled in production.'
         }
-      }, { status: 400 });
+      }, { status: 403 });
     }
 
     const { payment_order_id } = await request.json();

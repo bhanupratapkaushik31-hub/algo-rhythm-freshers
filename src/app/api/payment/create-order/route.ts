@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 import Razorpay from 'razorpay';
 
 export async function POST(request: NextRequest) {
   try {
+    // 0. Rate limiting (max 15 orders per minute per IP)
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(clientIp, 'create-order', { limit: 15, windowMs: 60000 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Too many requests. Please wait a moment before trying again.'
+        }
+      }, { status: 429 });
+    }
+
     const { registration_id } = await request.json();
 
     if (!registration_id) {
@@ -45,58 +59,31 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Initialize Razorpay credentials & mode
+    // 2. Initialize Razorpay credentials & strict mode
+    const isProduction = process.env.NODE_ENV === 'production';
+    // Simulator is strictly forbidden in production
+    const isSimulatorMode = !isProduction && process.env.PAYMENT_MODE === 'simulator';
+
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    const isSimulatorMode = process.env.PAYMENT_MODE === 'simulator';
     const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
     if (!isSimulatorMode && !isRazorpayConfigured) {
-      console.error('[Create Order] Razorpay credentials missing or placeholder in live mode.');
+      console.error('[Create Order] Razorpay credentials missing or invalid in live mode.');
       return NextResponse.json({
         success: false,
         error: {
           code: 'PAYMENT_CONFIG_ERROR',
-          message: 'Razorpay API credentials are not configured on the server. Please check .env.local variables.'
+          message: 'Payment gateway is currently not configured on the server. Please contact administrators.'
         }
       }, { status: 500 });
     }
 
-    let orderId = '';
-
-    if (isSimulatorMode && !isRazorpayConfigured) {
-      // Offline Simulator Mode without Razorpay Keys
-      orderId = `order_sim_${reg.id.substring(0, 8)}_${Date.now()}`;
-      console.log(`[Create Order] Generated simulator order: ${orderId}`);
-    } else {
-      // Live or Test Razorpay Gateway Mode
-      const razorpay = new Razorpay({
-        key_id: keyId!,
-        key_secret: keySecret!,
-      });
-
-      const orderOptions = {
-        amount: amountInPaise,
-        currency: 'INR',
-        receipt: `rcpt_${reg.id.substring(0, 8)}_${Date.now().toString().slice(-4)}`,
-        notes: {
-          registration_id: reg.id,
-          registration_number: reg.registration_number,
-          full_name: reg.full_name,
-          email: reg.email,
-        },
-      };
-
-      const realOrder = await razorpay.orders.create(orderOptions);
-      orderId = realOrder.id;
-      console.log(`[Create Order] Successfully created Razorpay order: ${orderId} for registration: ${reg.id}`);
-    }
-
-    // 4. Save Payment record in database cleanly without duplicate crashes
+    // 3. Check for existing payment record & order reuse (Duplicate order prevention)
     const { data: existingPayments, error: fetchPayError } = await supabaseAdmin
       .from('payments')
-      .select('id, payment_status')
+      .select('id, razorpay_order_id, payment_status, created_at, updated_at')
       .eq('registration_id', reg.id)
       .order('created_at', { ascending: false });
 
@@ -104,10 +91,59 @@ export async function POST(request: NextRequest) {
       console.error('[Create Order] Failed to query existing payments:', fetchPayError);
     }
 
+    let orderId = '';
+    const latestPayment = existingPayments && existingPayments.length > 0 ? existingPayments[0] : null;
+
+    // Check if we can safely reuse a recent pending Razorpay order (created within last 15 minutes)
+    if (latestPayment && latestPayment.payment_status === 'PENDING' && latestPayment.razorpay_order_id) {
+      const orderCreatedAt = new Date(latestPayment.updated_at || latestPayment.created_at).getTime();
+      const ageMinutes = (Date.now() - orderCreatedAt) / (1000 * 60);
+
+      const isRealRazorpayOrder = latestPayment.razorpay_order_id.startsWith('order_') &&
+        !latestPayment.razorpay_order_id.startsWith('order_pending_') &&
+        !latestPayment.razorpay_order_id.startsWith('order_sim_');
+
+      if (isRealRazorpayOrder && ageMinutes < 15) {
+        orderId = latestPayment.razorpay_order_id;
+        console.log(`[Create Order] Reusing existing valid Razorpay order: ${orderId} for registration: ${reg.id}`);
+      }
+    }
+
+    // If no reusable order exists, generate a new one
+    if (!orderId) {
+      if (isSimulatorMode && !isRazorpayConfigured) {
+        // Only in local development test simulation
+        orderId = `order_sim_${reg.id.substring(0, 8)}_${Date.now()}`;
+        console.log(`[Create Order] Generated dev simulator order: ${orderId}`);
+      } else {
+        // Production & Real Live Razorpay Gateway
+        const razorpay = new Razorpay({
+          key_id: keyId!,
+          key_secret: keySecret!,
+        });
+
+        const orderOptions = {
+          amount: amountInPaise,
+          currency: 'INR',
+          receipt: `rcpt_${reg.id.substring(0, 8)}_${Date.now().toString().slice(-4)}`,
+          notes: {
+            registration_id: reg.id,
+            registration_number: reg.registration_number,
+            full_name: reg.full_name,
+            email: reg.email,
+          },
+        };
+
+        const realOrder = await razorpay.orders.create(orderOptions);
+        orderId = realOrder.id;
+        console.log(`[Create Order] Successfully created Razorpay order: ${orderId} for registration: ${reg.id}`);
+      }
+    }
+
+    // 4. Save/Update Payment record in database cleanly without duplicate records
     const timestamp = new Date().toISOString();
 
-    if (existingPayments && existingPayments.length > 0) {
-      const primaryPay = existingPayments[0];
+    if (latestPayment) {
       const { error: updateError } = await supabaseAdmin
         .from('payments')
         .update({
@@ -117,7 +153,7 @@ export async function POST(request: NextRequest) {
           payment_status: 'PENDING',
           updated_at: timestamp
         })
-        .eq('id', primaryPay.id);
+        .eq('id', latestPayment.id);
 
       if (updateError) {
         console.error('[Create Order] Payment record update error:', updateError);
@@ -130,7 +166,7 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
       }
 
-      // If there are duplicate pending records, clean up redundant pending records
+      // If duplicate pending records exist, clean up redundant ones
       if (existingPayments.length > 1) {
         const redundantIds = existingPayments
           .slice(1)
@@ -193,9 +229,10 @@ export async function POST(request: NextRequest) {
       success: false,
       error: {
         code: 'INTERNAL_SERVER_ERROR',
-        message: err.message || 'Something went wrong. Please try again later.'
+        message: 'Something went wrong. Please try again later.'
       }
     }, { status: 500 });
   }
 }
+
 

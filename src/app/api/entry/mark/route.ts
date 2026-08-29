@@ -45,6 +45,21 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Check payment record for refunded state
+    const { data: payments } = await supabaseAdmin
+      .from('payments')
+      .select('payment_status, refund_status')
+      .eq('registration_id', registration_id)
+      .order('created_at', { ascending: false });
+
+    const latestPay = payments?.[0];
+    if (latestPay?.refund_status === 'REFUNDED') {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'CANCELLED_TICKET', message: 'Cannot mark entry. Ticket has been refunded.' }
+      }, { status: 400 });
+    }
+
     const timestamp = new Date().toISOString();
     let entryRecord = null;
 
@@ -69,13 +84,13 @@ export async function POST(request: NextRequest) {
       if (insertErr) {
         console.error('Mark entry insertion error:', insertErr);
         
-        // Unique constraint violation (means someone already entered)
+        // Unique constraint violation (means someone already entered simultaneously)
         if (insertErr.code === '23505') {
           return NextResponse.json({
             success: false,
             error: {
               code: 'ALREADY_ENTERED',
-              message: 'This ticket has already been used for entry.'
+              message: 'This ticket has already been marked entered.'
             }
           }, { status: 400 });
         }
@@ -87,9 +102,28 @@ export async function POST(request: NextRequest) {
       }
 
       entryRecord = newEntry;
+    } else if (markAction === 'RE_ENTRY') {
+      // 3b. Update existing entry status to RE_ENTERED
+      const { data: updatedEntry, error: updateErr } = await supabaseAdmin
+        .from('entries')
+        .update({
+          entry_status: 'RE_ENTERED',
+          scanned_by: admin.name || admin.email || 'Admin Staff',
+          scanner_device: scanner_device || 'Web Browser',
+          scanned_at: timestamp,
+          coordinator_id: admin.id
+        })
+        .eq('registration_id', registration_id)
+        .select()
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('Mark re-entry update error:', updateErr);
+      }
+      entryRecord = updatedEntry;
     }
 
-    // 3b. Insert detail log into entry_logs table
+    // 3c. Insert detail audit log into entry_logs table
     const { error: logErr } = await supabaseAdmin
       .from('entry_logs')
       .insert({

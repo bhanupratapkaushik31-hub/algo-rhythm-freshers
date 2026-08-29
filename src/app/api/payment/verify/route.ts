@@ -2,11 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTicketEmail } from '@/lib/email';
 import { EVENT_CONFIG } from '@/config/event';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
 
 export async function POST(request: NextRequest) {
   try {
+    // 0. Rate limiting (max 15 verification calls per minute per IP)
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(clientIp, 'payment-verify', { limit: 15, windowMs: 60000 });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Too many requests. Please wait a moment before trying again.'
+        }
+      }, { status: 429 });
+    }
+
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, registration_id } = await request.json();
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !registration_id) {
@@ -27,11 +41,12 @@ export async function POST(request: NextRequest) {
         success: false,
         error: {
           code: 'CONFIG_ERROR',
-          message: 'Payment configuration error. Please contact admins.'
+          message: 'Payment configuration error. Please contact administrators.'
         }
       }, { status: 500 });
     }
 
+    // 1. Verify HMAC SHA-256 Signature
     const dataToSign = `${razorpay_order_id}|${razorpay_payment_id}`;
     const expectedSignature = crypto
       .createHmac('sha256', keySecret)
@@ -141,24 +156,77 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fetch the payment details from Razorpay to get the actual payment method (upi, card, netbanking, etc)
+    // 6. Direct server-to-server Razorpay API verification
     let paymentMethod = 'RAZORPAY';
-    try {
-      if (keyId) {
+    if (keyId && !keyId.includes('placeholder')) {
+      try {
         const razorpay = new Razorpay({
           key_id: keyId,
           key_secret: keySecret,
         });
+
         const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
-        if (paymentDetails && paymentDetails.method) {
+        if (!paymentDetails) {
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'RAZORPAY_FETCH_FAILED',
+              message: 'Could not fetch payment verification from Razorpay.'
+            }
+          }, { status: 400 });
+        }
+
+        // Verify order ID and amount in Razorpay's direct response
+        if (paymentDetails.order_id !== razorpay_order_id) {
+          console.error(`[Verify Payment] Razorpay order_id mismatch. Expected ${razorpay_order_id}, got ${paymentDetails.order_id}`);
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'ORDER_MISMATCH',
+              message: 'Payment does not match the created order.'
+            }
+          }, { status: 400 });
+        }
+
+        if (paymentDetails.amount !== expectedPaise) {
+          console.error(`[Verify Payment] Razorpay amount mismatch. Expected ${expectedPaise}, got ${paymentDetails.amount}`);
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'AMOUNT_MISMATCH',
+              message: 'Payment amount mismatch detected.'
+            }
+          }, { status: 400 });
+        }
+
+        // Verify payment status is captured
+        if (paymentDetails.status !== 'captured') {
+          console.warn(`[Verify Payment] Payment status is ${paymentDetails.status}, not captured.`);
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'PAYMENT_NOT_CAPTURED',
+              message: `Payment status is ${paymentDetails.status}. Funds were not captured.`
+            }
+          }, { status: 400 });
+        }
+
+        if (paymentDetails.method) {
           paymentMethod = paymentDetails.method;
         }
+      } catch (fetchErr: any) {
+        console.error('[Verify Payment] Failed to verify payment with Razorpay API:', fetchErr);
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: 'GATEWAY_VERIFICATION_ERROR',
+            message: 'Unable to verify payment with Razorpay gateway. Please retry or contact support.'
+          }
+        }, { status: 502 });
       }
-    } catch (fetchErr) {
-      console.warn('[Verify Payment] Failed to fetch payment details from Razorpay:', fetchErr);
     }
 
-    // 3. Mark Payment as Success
+    // 7. Mark Payment as SUCCESS in database
     const { error: payUpdateError } = await supabaseAdmin
       .from('payments')
       .update({
@@ -182,7 +250,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 4. Mark Registration as Paid
+    // 8. Mark Registration as PAID
     const { data: reg, error: regUpdateError } = await supabaseAdmin
       .from('registrations')
       .update({
@@ -194,7 +262,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (regUpdateError || !reg) {
-      console.error('Verify Payment: Update registration error:', regUpdateError);
+      console.error('[Verify Payment] Update registration error:', regUpdateError);
       return NextResponse.json({
         success: false,
         error: {
@@ -204,9 +272,9 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 5. Send Transactional Email (async, do not block user response on failure)
+    // 9. Send Transactional Email (async, do not block user response on failure)
     sendTicketEmail(reg.id).catch((emailErr) => {
-      console.error('Verification success but email failed to trigger:', emailErr);
+      console.error('[Verify Payment] Email failed to trigger:', emailErr);
     });
 
     return NextResponse.json({
@@ -222,8 +290,9 @@ export async function POST(request: NextRequest) {
       success: false,
       error: {
         code: 'INTERNAL_SERVER_ERROR',
-        message: err.message || 'Verification crashed.'
+        message: 'Verification could not be completed. Please try again.'
       }
     }, { status: 500 });
   }
 }
+

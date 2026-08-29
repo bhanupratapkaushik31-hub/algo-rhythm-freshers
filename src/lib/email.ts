@@ -85,7 +85,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
       .eq('payment_status', 'SUCCESS')
       .maybeSingle();
 
-    const paymentMethodDisplay = payment?.payment_method === 'TEST_SIMULATOR' ? 'TEST SIMULATOR' : 'RAZORPAY';
+    const paymentMethodDisplay = payment?.payment_method && payment.payment_method !== 'TEST_SIMULATOR' ? payment.payment_method.toUpperCase() : 'RAZORPAY';
 
     // 3. Prepare ticket verification link
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
