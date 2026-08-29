@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
-import { Calendar, Clock, MapPin, ShieldCheck, Ticket, LogOut, ArrowLeft } from 'lucide-react';
+import { Calendar, Clock, MapPin, ShieldCheck, Ticket, LogOut, ArrowLeft, AlertTriangle } from 'lucide-react';
 import QRCode from 'qrcode';
 import TicketActions from '../ticket/[token]/TicketActions';
 import RetrieveForm from './RetrieveForm';
@@ -12,12 +12,14 @@ import MultiTicketSelect from './MultiTicketSelect';
 interface MyTicketPageProps {
   searchParams: Promise<{
     action?: string;
+    registration_id?: string;
+    ticket_token?: string;
     error?: string;
   }>;
 }
 
 export default async function MyTicketPage({ searchParams }: MyTicketPageProps) {
-  const { action, error } = await searchParams;
+  const { action, registration_id, ticket_token, error } = await searchParams;
   const cookieStore = await cookies();
   const ticketTokenCookie = cookieStore.get('student_ticket_token')?.value;
   const phoneCookie = cookieStore.get('student_phone')?.value;
@@ -26,14 +28,16 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
   let hasMultipleTickets = false;
   let ticketsList: any[] = [];
   let entryStatus = 'NOT_ENTERED';
+  let accessError: string | null = null;
 
-  // 1. Fetch registrations under phone number to check if there are multiple tickets
+  // 1. Fetch registrations under phone number if student_phone cookie exists
   if (phoneCookie) {
     const { data: regs } = await supabaseAdmin
       .from('registrations')
       .select('id, full_name, registration_number, ticket_id, ticket_token')
       .eq('phone', phoneCookie.trim())
-      .eq('registration_status', 'PAID');
+      .eq('registration_status', 'PAID')
+      .order('created_at', { ascending: true });
     
     if (regs && regs.length > 0) {
       ticketsList = regs;
@@ -41,9 +45,47 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
     }
   }
 
-  // 2. Determine if we should show the active ticket (State A)
-  // We skip direct ticket display if the user explicitly clicked "View other tickets" (action=select)
-  if (ticketTokenCookie && action !== 'select') {
+  // 2. Priority 1: Check registration_id in query params (Direct card selection or deep link)
+  if (registration_id) {
+    const { data: foundReg } = await supabaseAdmin
+      .from('registrations')
+      .select('*')
+      .eq('id', registration_id)
+      .eq('registration_status', 'PAID')
+      .maybeSingle();
+
+    if (foundReg) {
+      // IDOR ownership validation: If student phone cookie exists, verify registration belongs to this phone number
+      if (!phoneCookie || foundReg.phone === phoneCookie.trim()) {
+        reg = foundReg;
+      } else {
+        accessError = 'You are not authorized to view this ticket. Please verify using your registered phone number.';
+      }
+    } else {
+      accessError = 'Ticket not found or registration payment has not been confirmed yet.';
+    }
+  }
+
+  // 2b. Priority 2: Check ticket_token in query params
+  if (!reg && !accessError && ticket_token) {
+    const { data: foundReg } = await supabaseAdmin
+      .from('registrations')
+      .select('*')
+      .eq('ticket_token', ticket_token)
+      .eq('registration_status', 'PAID')
+      .maybeSingle();
+
+    if (foundReg) {
+      if (!phoneCookie || foundReg.phone === phoneCookie.trim()) {
+        reg = foundReg;
+      } else {
+        accessError = 'You are not authorized to view this ticket.';
+      }
+    }
+  }
+
+  // 2c. Priority 3: Fall back to student_ticket_token cookie (only if user did not explicitly request selection list)
+  if (!reg && !accessError && ticketTokenCookie && action !== 'select') {
     const { data: foundReg } = await supabaseAdmin
       .from('registrations')
       .select('*')
@@ -53,17 +95,45 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
     
     if (foundReg) {
       reg = foundReg;
+    }
+  }
 
-      // Check if ticket is scanned in entries table
-      const { data: entry } = await supabaseAdmin
-        .from('entries')
-        .select('entry_status')
-        .eq('registration_id', reg.id)
-        .maybeSingle();
-      
-      if (entry) {
-        entryStatus = entry.entry_status; // e.g. 'ENTERED' or 'TEST_ENTERED'
-      }
+  // 2d. Priority 4: If phone cookie is present and exactly 1 ticket exists, and action !== 'select'
+  if (!reg && !accessError && phoneCookie && ticketsList.length === 1 && action !== 'select') {
+    const { data: singleReg } = await supabaseAdmin
+      .from('registrations')
+      .select('*')
+      .eq('id', ticketsList[0].id)
+      .eq('registration_status', 'PAID')
+      .maybeSingle();
+
+    if (singleReg) {
+      reg = singleReg;
+    }
+  }
+
+  // Double check multiple tickets if user loaded via direct link
+  if (reg && (!ticketsList || ticketsList.length <= 1)) {
+    const { data: siblingRegs } = await supabaseAdmin
+      .from('registrations')
+      .select('id')
+      .eq('phone', reg.phone)
+      .eq('registration_status', 'PAID');
+    if (siblingRegs && siblingRegs.length > 1) {
+      hasMultipleTickets = true;
+    }
+  }
+
+  // Check if ticket is scanned in entries table
+  if (reg) {
+    const { data: entry } = await supabaseAdmin
+      .from('entries')
+      .select('entry_status')
+      .eq('registration_id', reg.id)
+      .maybeSingle();
+    
+    if (entry) {
+      entryStatus = entry.entry_status; // e.g. 'ENTERED' or 'TEST_ENTERED'
     }
   }
 
@@ -330,6 +400,13 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
           </Link>
         </header>
 
+        {accessError && (
+          <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+            <span>{accessError}</span>
+          </div>
+        )}
+
         <MultiTicketSelect tickets={ticketsList} phone={phoneCookie} />
       </div>
     );
@@ -351,12 +428,10 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
         </Link>
       </header>
 
-      {error && (
-        <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-pulse">
-          <svg className="w-4 h-4 shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <span>An error occurred. Please try again.</span>
+      {(accessError || error) && (
+        <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+          <span>{accessError || 'Unable to retrieve ticket. Please verify your details.'}</span>
         </div>
       )}
 

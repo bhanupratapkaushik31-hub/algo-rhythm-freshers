@@ -61,15 +61,15 @@ export async function POST(request: NextRequest) {
 
     // 2. Initialize Razorpay credentials & strict mode
     const isProduction = process.env.NODE_ENV === 'production';
-    // Simulator is strictly forbidden in production
-    const isSimulatorMode = !isProduction && process.env.PAYMENT_MODE === 'simulator';
-
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
     const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
-    if (!isSimulatorMode && !isRazorpayConfigured) {
+    // Simulator mode is strictly permanently forbidden in production
+    const isSimulatorAllowed = !isProduction && !isRazorpayConfigured && process.env.ALLOW_PAYMENT_SIMULATOR === 'true';
+
+    if (!isSimulatorAllowed && !isRazorpayConfigured) {
       console.error('[Create Order] Razorpay credentials missing or invalid in live mode.');
       return NextResponse.json({
         success: false,
@@ -111,8 +111,8 @@ export async function POST(request: NextRequest) {
 
     // If no reusable order exists, generate a new one
     if (!orderId) {
-      if (isSimulatorMode && !isRazorpayConfigured) {
-        // Only in local development test simulation
+      if (isSimulatorAllowed) {
+        // Only in local development test simulation when explicitly enabled
         orderId = `order_sim_${reg.id.substring(0, 8)}_${Date.now()}`;
         console.log(`[Create Order] Generated dev simulator order: ${orderId}`);
       } else {
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
         currency: 'INR',
         key_id: keyId || '',
         razorpay_configured: isRazorpayConfigured,
-        payment_mode: isSimulatorMode ? 'simulator' : 'live',
+        payment_mode: isSimulatorAllowed ? 'simulator' : 'live',
         student: {
           name: reg.full_name,
           email: reg.email,

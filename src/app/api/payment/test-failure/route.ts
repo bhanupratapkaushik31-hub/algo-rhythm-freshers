@@ -3,13 +3,17 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Guard: Strictly permanently disabled in production
-    if (process.env.NODE_ENV === 'production' || process.env.PAYMENT_MODE !== 'simulator') {
+    // 1. Guard: Strictly permanently disabled in production or whenever Razorpay is configured
+    const isProduction = process.env.NODE_ENV === 'production';
+    const hasRazorpayKeys = !!(process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.includes('placeholder'));
+    const isSimulatorAllowed = !isProduction && !hasRazorpayKeys && process.env.ALLOW_PAYMENT_SIMULATOR === 'true';
+
+    if (!isSimulatorAllowed) {
       return NextResponse.json({
         success: false,
         error: {
           code: 'FORBIDDEN',
-          message: 'Payment simulator is permanently disabled in production.'
+          message: 'Payment simulator is permanently disabled. Real Razorpay payment verification is required.'
         }
       }, { status: 403 });
     }

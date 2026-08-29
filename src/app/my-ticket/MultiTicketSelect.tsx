@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Ticket, ArrowRight, User, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Ticket, ArrowRight, User, LogOut, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface TicketItem {
@@ -19,12 +19,22 @@ interface MultiTicketSelectProps {
 
 export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectProps) {
   const router = useRouter();
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
-  const handleSelect = (token: string) => {
-    // Set cookie for student_ticket_token
-    document.cookie = `student_ticket_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax; Secure`;
-    // Force Next.js to refresh the Server Component state
-    router.refresh();
+  const handleSelect = (ticket: TicketItem) => {
+    if (loadingId) return; // Prevent double clicks
+    setLoadingId(ticket.id);
+
+    try {
+      // Set cookie for student_ticket_token for fallback and session persistence
+      const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+      document.cookie = `student_ticket_token=${ticket.ticket_token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+    } catch (e) {
+      console.warn('Could not set student_ticket_token cookie:', e);
+    }
+
+    // Direct, unambiguous navigation to the specific registration
+    router.push(`/my-ticket?registration_id=${encodeURIComponent(ticket.id)}`);
   };
 
   return (
@@ -42,29 +52,53 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
         </p>
 
         {/* Tickets list */}
-        <div className="mt-6 space-y-3">
-          {tickets.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => handleSelect(t.ticket_token)}
-              className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-purple-500/30 transition-all text-left group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-500/10 text-purple-300">
-                  <User className="w-4 h-4" />
+        <div className="mt-6 space-y-3" role="list" aria-label="List of student tickets">
+          {tickets.map((t) => {
+            const isCurrentLoading = loadingId === t.id;
+            const isAnyLoading = loadingId !== null;
+
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => handleSelect(t)}
+                disabled={isAnyLoading}
+                aria-label={`Open ticket for ${t.full_name} (${t.ticket_id})`}
+                className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all text-left group focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${
+                  isCurrentLoading
+                    ? 'bg-purple-950/40 border-purple-500/50 cursor-wait'
+                    : isAnyLoading
+                    ? 'bg-white/5 border-white/5 opacity-50 cursor-not-allowed'
+                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-purple-500/30 cursor-pointer active:scale-[0.99]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg transition-colors ${isCurrentLoading ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-500/10 text-purple-300 group-hover:bg-purple-500/20'}`}>
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white font-outfit leading-tight group-hover:text-purple-300 transition-colors">
+                      {t.full_name}
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-wide">
+                      {t.registration_number} &bull; <span className="text-purple-400 font-semibold">{t.ticket_id}</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-white font-outfit leading-tight group-hover:text-purple-300 transition-colors">
-                    {t.full_name}
-                  </h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-wide">
-                    {t.registration_number} &bull; {t.ticket_id}
-                  </p>
+
+                <div className="flex items-center gap-2">
+                  {isCurrentLoading ? (
+                    <div className="flex items-center gap-1.5 text-purple-400 text-xs font-semibold">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-[11px] hidden sm:inline">Opening...</span>
+                    </div>
+                  ) : (
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-purple-300 group-hover:translate-x-1 transition-all" />
+                  )}
                 </div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-purple-300 group-hover:translate-x-1 transition-all" />
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-8 pt-6 border-t border-white/5 flex justify-center">
@@ -80,3 +114,4 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
     </div>
   );
 }
+

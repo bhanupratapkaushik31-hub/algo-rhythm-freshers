@@ -426,8 +426,8 @@ function PaymentContent() {
               <div className="flex items-center gap-3 p-4 bg-amber-950/20 border border-amber-500/20 rounded-xl text-xs text-amber-300 mb-6 leading-relaxed">
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="font-bold block mb-1">Configuration Required</strong>
-                  <span>Payment integration is not configured yet. Complete the Razorpay API keys setup in `.env.local` to proceed.</span>
+                  <strong className="font-bold block mb-1">Gateway Unavailable</strong>
+                  <span>Online checkout is temporarily paused for maintenance. Please refresh in a moment or contact the event coordinators.</span>
                 </div>
               </div>
             ) : (
