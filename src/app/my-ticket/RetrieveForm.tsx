@@ -1,129 +1,63 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Phone, Loader2, CheckCircle2, AlertTriangle, ArrowRight, KeyRound, RefreshCw, ArrowLeft } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Hash, Mail, Phone, Loader2, AlertTriangle, ArrowRight } from 'lucide-react';
 
 export default function RetrieveForm() {
-  const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
-  const [mobileNumber, setMobileNumber] = useState('');
-  const [otpInput, setOtpInput] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [otpExpirySeconds, setOtpExpirySeconds] = useState(300); // 5 minutes
 
-  // Countdown timer for resend cooldown and OTP expiry
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (resendCooldown > 0) {
-      interval = setInterval(() => {
-        setResendCooldown((prev) => Math.max(0, prev - 1));
-      }, 1000);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const cleanName = fullName.trim();
+    const cleanRegNo = registrationNumber.trim();
+    const cleanEmail = email.trim();
+    const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+
+    if (!cleanName || !cleanRegNo || !cleanEmail || !cleanPhone) {
+      setError('Please fill in all four fields to verify your registration.');
+      return;
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [resendCooldown]);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (step === 'otp' && otpExpirySeconds > 0) {
-      interval = setInterval(() => {
-        setOtpExpirySeconds((prev) => Math.max(0, prev - 1));
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [step, otpExpirySeconds]);
-
-  // Step 1: Request Mobile OTP
-  const handleRequestOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-
-    const digitsOnly = mobileNumber.replace(/\D/g, '').slice(-10);
-    if (digitsOnly.length !== 10) {
+    if (cleanPhone.length !== 10) {
       setError('Please enter a valid 10-digit mobile number.');
       return;
     }
 
     setLoading(true);
     setError(null);
-    setMessage(null);
 
     try {
-      const res = await fetch('/api/my-ticket/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: digitsOnly }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setError(data.error?.message || 'Unable to send OTP. Please try again.');
-        if (data.cooldownSeconds) {
-          setResendCooldown(data.cooldownSeconds);
-        }
-      } else {
-        setStep('otp');
-        setMessage(data.message || 'OTP sent if a registered account exists.');
-        setResendCooldown(60);
-        setOtpExpirySeconds(300);
-      }
-    } catch (err) {
-      console.error('Request Mobile OTP error:', err);
-      setError('Network error. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Step 2: Verify Mobile OTP
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const cleanOtp = otpInput.trim().replace(/\D/g, '');
-    if (cleanOtp.length !== 6) {
-      setError('Please enter the complete 6-digit verification code.');
-      return;
-    }
-
-    const digitsOnly = mobileNumber.replace(/\D/g, '').slice(-10);
-
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const res = await fetch('/api/my-ticket/verify-otp', {
+      const res = await fetch('/api/my-ticket/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: digitsOnly,
-          otp: cleanOtp
+          full_name: cleanName,
+          registration_number: cleanRegNo,
+          email: cleanEmail,
+          phone: cleanPhone
         }),
       });
 
       const data = await res.json();
+
       if (!res.ok || !data.success) {
-        setError(data.error?.message || 'Invalid or expired verification code.');
+        setError(data.error?.message || 'The details do not match any registered ticket. Please check your information and try again.');
+        setLoading(false);
       } else {
-        // Successful verification -> navigate to ticket page
+        // Successful 4-field verification -> reload/navigate to view ticket
         window.location.href = data.redirect || '/my-ticket';
       }
     } catch (err) {
-      console.error('Verify Mobile OTP error:', err);
-      setError('Network error. Please check your connection and try again.');
-    } finally {
+      console.error('Ticket verification error:', err);
+      setError('Network connection error. Please check your internet and try again.');
       setLoading(false);
     }
-  };
-
-  const formatExpiryTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
   return (
@@ -133,59 +67,111 @@ export default function RetrieveForm() {
 
       <div className="mb-6 text-center">
         <h2 className="text-2xl font-bold font-outfit text-white">
-          {step === 'mobile' ? 'Retrieve Your Ticket' : 'Mobile Verification'}
+          Verify Your Registration
         </h2>
         <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
-          {step === 'mobile'
-            ? 'Enter the 10-digit mobile number you used during registration.'
-            : `Enter the 6-digit verification code sent to +91 ${mobileNumber.replace(/\D/g, '').slice(-10)}.`}
+          Enter the same details you used during registration to securely access your ticket.
         </p>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-950/25 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
+        <div className="mb-5 p-4 bg-red-950/25 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
           <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
 
-      {message && (
-        <div className="mb-4 p-4 bg-purple-950/30 border border-purple-500/25 rounded-xl text-purple-200 text-xs flex gap-3 items-start animate-fade-in">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-purple-400 mt-0.5" />
-          <span>{message}</span>
-        </div>
-      )}
-
-      {step === 'mobile' ? (
-        <form onSubmit={handleRequestOtp} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
-              Registered Mobile Number
-            </label>
-            <div className="relative flex items-center">
-              <span className="inline-flex items-center px-3.5 py-3 bg-white/5 border border-r-0 border-white/10 text-slate-400 rounded-l-xl text-sm font-semibold select-none">
-                +91
-              </span>
-              <div className="relative w-full">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <Phone className="w-4 h-4" />
-                </div>
-                <input
-                  type="tel"
-                  placeholder="e.g. 98765 43210"
-                  value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
-                  disabled={loading}
-                  className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-r-xl pl-9 pr-4 py-3 text-sm text-white placeholder-slate-500 transition-colors outline-none"
-                  required
-                />
-              </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* 1. Full Name */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Full Name
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <User className="w-4 h-4" />
             </div>
-            <span className="text-[10px] text-slate-500 block leading-tight mt-1">
-              A 6-digit one-time code will be sent to your mobile number.
-            </span>
+            <input
+              type="text"
+              placeholder="e.g. Rahul Sharma"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              disabled={loading}
+              className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 transition-colors outline-none"
+              required
+            />
           </div>
+        </div>
 
+        {/* 2. Registration Number */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Registration Number
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <Hash className="w-4 h-4" />
+            </div>
+            <input
+              type="text"
+              placeholder="e.g. 24BCSE101"
+              value={registrationNumber}
+              onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
+              disabled={loading}
+              className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 uppercase tracking-wider transition-colors outline-none"
+              required
+            />
+          </div>
+        </div>
+
+        {/* 3. Email Address */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Email Address
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <Mail className="w-4 h-4" />
+            </div>
+            <input
+              type="email"
+              placeholder="e.g. rahul@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+              className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 transition-colors outline-none"
+              required
+            />
+          </div>
+        </div>
+
+        {/* 4. Phone Number */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+            Phone Number
+          </label>
+          <div className="relative flex items-center">
+            <span className="inline-flex items-center px-3.5 py-3 bg-white/5 border border-r-0 border-white/10 text-slate-400 rounded-l-xl text-sm font-semibold select-none">
+              +91
+            </span>
+            <div className="relative w-full">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                <Phone className="w-4 h-4" />
+              </div>
+              <input
+                type="tel"
+                placeholder="e.g. 98765 43210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                disabled={loading}
+                className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-r-xl pl-9 pr-4 py-3 text-sm text-white placeholder-slate-500 transition-colors outline-none"
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-2">
           <button
             type="submit"
             disabled={loading}
@@ -194,95 +180,17 @@ export default function RetrieveForm() {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Sending OTP...
+                Verifying Details...
               </>
             ) : (
               <>
-                Send Mobile OTP
+                VERIFY &amp; VIEW TICKET
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
-        </form>
-      ) : (
-        <form onSubmit={handleVerifyOtp} className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
-                6-Digit Mobile OTP
-              </label>
-              <span className="text-[10px] font-mono text-purple-400">
-                Expires in {formatExpiryTime(otpExpirySeconds)}
-              </span>
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                <KeyRound className="w-4 h-4 text-purple-400" />
-              </div>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="&bull; &bull; &bull; &bull; &bull; &bull;"
-                value={otpInput}
-                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                disabled={loading}
-                autoFocus
-                className="w-full bg-black/30 border border-purple-500/40 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl pl-10 pr-4 py-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 transition-colors outline-none"
-                required
-              />
-            </div>
-            <span className="text-[10px] text-slate-500 block leading-tight mt-1">
-              Enter the verification code sent to +91 {mobileNumber.replace(/\D/g, '').slice(-10)}.
-            </span>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || otpInput.length !== 6}
-            className="w-full inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 disabled:from-purple-800/40 disabled:to-pink-800/40 text-white font-bold rounded-xl shadow-lg shadow-purple-500/10 hover:shadow-purple-500/25 transition-all outline-none text-xs uppercase tracking-wider cursor-pointer"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Verifying OTP...
-              </>
-            ) : (
-              <>
-                Verify &amp; View Ticket
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setStep('mobile');
-                setOtpInput('');
-                setError(null);
-                setMessage(null);
-              }}
-              className="text-[11px] font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <ArrowLeft className="w-3 h-3" />
-              Change Number
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleRequestOtp()}
-              disabled={resendCooldown > 0 || loading}
-              className="text-[11px] font-semibold text-purple-400 disabled:text-slate-600 hover:text-purple-300 transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : 'Resend OTP'}
-            </button>
-          </div>
-        </form>
-      )}
+        </div>
+      </form>
     </div>
   );
 }

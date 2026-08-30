@@ -3,40 +3,31 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { EVENT_CONFIG } from '@/config/event';
-import { Calendar, Clock, MapPin, ShieldCheck, Ticket, LogOut, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Calendar, Clock, MapPin, ShieldCheck, LogOut, ArrowLeft, AlertTriangle } from 'lucide-react';
 import QRCode from 'qrcode';
 import TicketActions from '../ticket/[token]/TicketActions';
 import RetrieveForm from './RetrieveForm';
-import MultiTicketSelect from './MultiTicketSelect';
 import { verifyTicketSession } from '@/lib/otp';
 
 interface MyTicketPageProps {
   searchParams: Promise<{
-    action?: string;
-    registration_id?: string;
-    ticket_token?: string;
     error?: string;
   }>;
 }
 
 export default async function MyTicketPage({ searchParams }: MyTicketPageProps) {
-  const { action, registration_id, ticket_token, error } = await searchParams;
+  const { error } = await searchParams;
   const cookieStore = await cookies();
 
   // 1. Read and verify the tamper-proof ticket access session
   const sessionCookie = cookieStore.get('ticket_access_session')?.value;
-  const ticketTokenCookie = cookieStore.get('student_ticket_token')?.value;
-  const phoneCookie = cookieStore.get('student_phone')?.value;
-
   const session = verifyTicketSession(sessionCookie);
 
   let reg: any = null;
-  let hasMultipleTickets = false;
-  let ticketsList: any[] = [];
   let entryStatus = 'NOT_ENTERED';
   let accessError: string | null = null;
 
-  // 2. Gate: If NO valid verified session exists, tickets MUST NOT be accessible
+  // 2. Gate: If NO valid verified session exists, render the 4-field verification form
   if (!session.valid || !session.regIds || session.regIds.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
@@ -56,7 +47,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
         {(accessError || error) && (
           <div className="w-full max-w-md mb-4 p-4 bg-red-950/25 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
             <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-            <span>{accessError || error || 'Please verify using your registered contact.'}</span>
+            <span>{accessError || error}</span>
           </div>
         )}
 
@@ -65,52 +56,23 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
     );
   }
 
-  // 3. Authenticated Session Exists: Fetch ONLY registrations bound to this verified session
-  const { data: authorizedRegs, error: fetchErr } = await supabaseAdmin
+  // 3. Authenticated Session Exists: Fetch ONLY the single registration bound to this verified session
+  const targetRegId = session.regIds[0];
+
+  const { data: matchedReg, error: fetchErr } = await supabaseAdmin
     .from('registrations')
     .select('*')
-    .in('id', session.regIds)
+    .eq('id', targetRegId)
     .eq('registration_status', 'PAID')
-    .order('created_at', { ascending: true });
+    .maybeSingle();
 
-  if (fetchErr || !authorizedRegs || authorizedRegs.length === 0) {
-    accessError = 'No confirmed paid tickets found for your verified session.';
+  if (fetchErr || !matchedReg) {
+    accessError = 'No confirmed paid ticket found for this verified session.';
   } else {
-    ticketsList = authorizedRegs;
-    hasMultipleTickets = authorizedRegs.length > 1;
-
-    // IDOR Protection: Check requested registration_id
-    if (registration_id) {
-      if (session.regIds.includes(registration_id)) {
-        reg = authorizedRegs.find((r: any) => r.id === registration_id) || null;
-      } else {
-        accessError = 'You are not authorized to view this ticket.';
-      }
-    }
-
-    // IDOR Protection: Check requested ticket_token
-    if (!reg && !accessError && ticket_token) {
-      const matchingTokenReg = authorizedRegs.find((r: any) => r.ticket_token === ticket_token);
-      if (matchingTokenReg) {
-        reg = matchingTokenReg;
-      } else {
-        accessError = 'You are not authorized to view this ticket.';
-      }
-    }
-
-    // Fallback selection if no specific ID or token requested
-    if (!reg && !accessError) {
-      if (authorizedRegs.length === 1 && action !== 'select') {
-        // Exactly 1 ticket: automatically open it
-        reg = authorizedRegs[0];
-      } else {
-        // Multiple tickets: prompt user to select which ticket to open
-        reg = null;
-      }
-    }
+    reg = matchedReg;
   }
 
-  // 4. Check entry status for active ticket
+  // 4. Check entry status for this verified ticket
   if (reg) {
     const { data: entry } = await supabaseAdmin
       .from('entries')
@@ -123,7 +85,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
     }
   }
 
-  // 5. Render: Display Active Ticket
+  // 5. Render: Display Active Verified Ticket
   if (reg) {
     let qrCodeDataUrl = '';
     try {
@@ -340,23 +302,14 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
           {/* Download and Print Actions */}
           <TicketActions ticketId={reg.ticket_id || '0000'} registrationNumber={reg.registration_number} />
 
-          {/* Options to switch tickets / log out */}
+          {/* Logout / Verify Another Ticket */}
           <div className="flex flex-col gap-2.5 items-center pt-4 print:hidden">
-            {hasMultipleTickets && (
-              <Link
-                href="/my-ticket?action=select"
-                className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors uppercase tracking-wider flex items-center gap-1"
-              >
-                <Ticket className="w-3.5 h-3.5" />
-                View My Other Tickets ({ticketsList.length})
-              </Link>
-            )}
             <a
               href="/api/my-ticket/logout"
-              className="text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-wider flex items-center gap-1"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-white transition-colors uppercase tracking-wider"
             >
-              <LogOut className="w-3 h-3" />
-              Disconnect / Exit Session
+              <LogOut className="w-3.5 h-3.5" />
+              Verify Another Ticket / Exit
             </a>
           </div>
         </div>
@@ -364,36 +317,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
     );
   }
 
-  // 6. Render: Multiple Ticket Selection for Verified Session
-  if (ticketsList.length > 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
-        <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
-
-        {/* Floating navbar/header */}
-        <header className="w-full max-w-md flex justify-between items-center mb-8">
-          <Link href="/" className="font-extrabold tracking-wide text-sm text-gradient-indigo-purple font-outfit">
-            ALGO-RHYTHM
-          </Link>
-          <Link href="/" className="text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1.5">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Home
-          </Link>
-        </header>
-
-        {accessError && (
-          <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-            <span>{accessError}</span>
-          </div>
-        )}
-
-        <MultiTicketSelect tickets={ticketsList} phone={session.contact || phoneCookie || ''} />
-      </div>
-    );
-  }
-
-  // 7. Fallback: Retrieve Ticket Form
+  // 6. Fallback: Verification Form
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
@@ -408,10 +332,10 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
         </Link>
       </header>
 
-      {(accessError || error) && (
+      {accessError && (
         <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
           <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-          <span>{accessError || error || 'Unable to retrieve ticket. Please verify your contact.'}</span>
+          <span>{accessError}</span>
         </div>
       )}
 

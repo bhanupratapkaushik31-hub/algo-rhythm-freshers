@@ -8,8 +8,8 @@ export async function POST() {
   return NextResponse.json({
     success: false,
     error: {
-      code: 'OTP_REQUIRED',
-      message: 'Direct phone retrieval is disabled for security. Verification code required.'
+      code: 'VERIFICATION_REQUIRED',
+      message: 'Direct phone retrieval is disabled for security. Please verify your registration details at /my-ticket.'
     }
   }, { status: 403 });
 }
