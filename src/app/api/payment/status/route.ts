@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         status: uiStatus,
-        ticket_token: reg.ticket_token
+        ticket_token: uiStatus === 'SUCCESS' ? reg.ticket_token : undefined
       }
     });
 

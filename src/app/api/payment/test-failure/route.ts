@@ -1,91 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-  try {
-    // 1. Guard: Strictly permanently disabled in production or whenever Razorpay is configured
-    const isProduction = process.env.NODE_ENV === 'production';
-    const hasRazorpayKeys = !!(process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.includes('placeholder'));
-    const isSimulatorAllowed = !isProduction && !hasRazorpayKeys && process.env.ALLOW_PAYMENT_SIMULATOR === 'true';
-
-    if (!isSimulatorAllowed) {
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'FORBIDDEN',
-          message: 'Payment simulator is permanently disabled. Real Razorpay payment verification is required.'
-        }
-      }, { status: 403 });
+/**
+ * Payment simulator is permanently disabled.
+ */
+export async function POST() {
+  return NextResponse.json({
+    success: false,
+    error: {
+      code: 'SIMULATOR_DISABLED',
+      message: 'Payment simulation is permanently disabled.'
     }
-
-    const { payment_order_id } = await request.json();
-
-    if (!payment_order_id) {
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'MISSING_ORDER_ID',
-          message: 'payment_order_id is required.'
-        }
-      }, { status: 400 });
-    }
-
-    // 2. Verify payment record exists in Supabase
-    const { data: payment, error: payError } = await supabaseAdmin
-      .from('payments')
-      .select('*')
-      .eq('razorpay_order_id', payment_order_id)
-      .maybeSingle();
-
-    if (payError || !payment) {
-      console.error('Test Failure: Payment record not found:', payError);
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'ORDER_NOT_FOUND',
-          message: 'The associated payment order was not found.'
-        }
-      }, { status: 404 });
-    }
-
-    const timestamp = new Date().toISOString();
-
-    // 3. Update payment record in Supabase to FAILED
-    const { error: payUpdateError } = await supabaseAdmin
-      .from('payments')
-      .update({
-        payment_status: 'FAILED',
-        payment_method: 'TEST_SIMULATOR',
-        failure_reason: 'TEST_PAYMENT_FAILURE',
-        failed_at: timestamp,
-        updated_at: timestamp
-      })
-      .eq('id', payment.id);
-
-    if (payUpdateError) {
-      console.error('Test Failure: Update payment error:', payUpdateError);
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'DATABASE_ERROR',
-          message: 'Failed to update payment record.'
-        }
-      }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Simulated payment failure recorded.'
-    });
-
-  } catch (err: any) {
-    console.error('Test Failure API error:', err);
-    return NextResponse.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: err.message || 'Payment simulator failure workflow failed.'
-      }
-    }, { status: 500 });
-  }
+  }, { status: 403 });
 }
+
+export const dynamic = 'force-dynamic';

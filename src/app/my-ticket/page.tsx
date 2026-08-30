@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import TicketActions from '../ticket/[token]/TicketActions';
 import RetrieveForm from './RetrieveForm';
 import MultiTicketSelect from './MultiTicketSelect';
+import { verifyTicketSession } from '@/lib/otp';
 
 interface MyTicketPageProps {
   searchParams: Promise<{
@@ -21,8 +22,13 @@ interface MyTicketPageProps {
 export default async function MyTicketPage({ searchParams }: MyTicketPageProps) {
   const { action, registration_id, ticket_token, error } = await searchParams;
   const cookieStore = await cookies();
+
+  // 1. Read and verify the tamper-proof ticket access session
+  const sessionCookie = cookieStore.get('ticket_access_session')?.value;
   const ticketTokenCookie = cookieStore.get('student_ticket_token')?.value;
   const phoneCookie = cookieStore.get('student_phone')?.value;
+
+  const session = verifyTicketSession(sessionCookie);
 
   let reg: any = null;
   let hasMultipleTickets = false;
@@ -30,116 +36,95 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
   let entryStatus = 'NOT_ENTERED';
   let accessError: string | null = null;
 
-  // 1. Fetch registrations under phone number if student_phone cookie exists
-  if (phoneCookie) {
-    const { data: regs } = await supabaseAdmin
-      .from('registrations')
-      .select('id, full_name, registration_number, ticket_id, ticket_token')
-      .eq('phone', phoneCookie.trim())
-      .eq('registration_status', 'PAID')
-      .order('created_at', { ascending: true });
-    
-    if (regs && regs.length > 0) {
-      ticketsList = regs;
-      hasMultipleTickets = regs.length > 1;
-    }
+  // 2. Gate: If NO valid verified session exists, tickets MUST NOT be accessible
+  if (!session.valid || !session.regIds || session.regIds.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
+        <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
+
+        {/* Floating navbar/header */}
+        <header className="w-full max-w-md flex justify-between items-center mb-8">
+          <Link href="/" className="font-extrabold tracking-wide text-sm text-gradient-indigo-purple font-outfit select-none">
+            ALGO-RHYTHM
+          </Link>
+          <Link href="/" className="text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider flex items-center gap-1.5">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Home
+          </Link>
+        </header>
+
+        {(accessError || error) && (
+          <div className="w-full max-w-md mb-4 p-4 bg-red-950/25 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+            <span>{accessError || error || 'Please verify using your registered contact.'}</span>
+          </div>
+        )}
+
+        <RetrieveForm />
+      </div>
+    );
   }
 
-  // 2. Priority 1: Check registration_id in query params (Direct card selection or deep link)
-  if (registration_id) {
-    const { data: foundReg } = await supabaseAdmin
-      .from('registrations')
-      .select('*')
-      .eq('id', registration_id)
-      .eq('registration_status', 'PAID')
-      .maybeSingle();
+  // 3. Authenticated Session Exists: Fetch ONLY registrations bound to this verified session
+  const { data: authorizedRegs, error: fetchErr } = await supabaseAdmin
+    .from('registrations')
+    .select('*')
+    .in('id', session.regIds)
+    .eq('registration_status', 'PAID')
+    .order('created_at', { ascending: true });
 
-    if (foundReg) {
-      // IDOR ownership validation: If student phone cookie exists, verify registration belongs to this phone number
-      if (!phoneCookie || foundReg.phone === phoneCookie.trim()) {
-        reg = foundReg;
-      } else {
-        accessError = 'You are not authorized to view this ticket. Please verify using your registered phone number.';
-      }
-    } else {
-      accessError = 'Ticket not found or registration payment has not been confirmed yet.';
-    }
-  }
+  if (fetchErr || !authorizedRegs || authorizedRegs.length === 0) {
+    accessError = 'No confirmed paid tickets found for your verified session.';
+  } else {
+    ticketsList = authorizedRegs;
+    hasMultipleTickets = authorizedRegs.length > 1;
 
-  // 2b. Priority 2: Check ticket_token in query params
-  if (!reg && !accessError && ticket_token) {
-    const { data: foundReg } = await supabaseAdmin
-      .from('registrations')
-      .select('*')
-      .eq('ticket_token', ticket_token)
-      .eq('registration_status', 'PAID')
-      .maybeSingle();
-
-    if (foundReg) {
-      if (!phoneCookie || foundReg.phone === phoneCookie.trim()) {
-        reg = foundReg;
+    // IDOR Protection: Check requested registration_id
+    if (registration_id) {
+      if (session.regIds.includes(registration_id)) {
+        reg = authorizedRegs.find((r: any) => r.id === registration_id) || null;
       } else {
         accessError = 'You are not authorized to view this ticket.';
       }
     }
-  }
 
-  // 2c. Priority 3: Fall back to student_ticket_token cookie (only if user did not explicitly request selection list)
-  if (!reg && !accessError && ticketTokenCookie && action !== 'select') {
-    const { data: foundReg } = await supabaseAdmin
-      .from('registrations')
-      .select('*')
-      .eq('ticket_token', ticketTokenCookie)
-      .eq('registration_status', 'PAID')
-      .maybeSingle();
-    
-    if (foundReg) {
-      reg = foundReg;
+    // IDOR Protection: Check requested ticket_token
+    if (!reg && !accessError && ticket_token) {
+      const matchingTokenReg = authorizedRegs.find((r: any) => r.ticket_token === ticket_token);
+      if (matchingTokenReg) {
+        reg = matchingTokenReg;
+      } else {
+        accessError = 'You are not authorized to view this ticket.';
+      }
+    }
+
+    // Fallback selection if no specific ID or token requested
+    if (!reg && !accessError) {
+      if (authorizedRegs.length === 1 && action !== 'select') {
+        // Exactly 1 ticket: automatically open it
+        reg = authorizedRegs[0];
+      } else {
+        // Multiple tickets: prompt user to select which ticket to open
+        reg = null;
+      }
     }
   }
 
-  // 2d. Priority 4: If phone cookie is present and exactly 1 ticket exists, and action !== 'select'
-  if (!reg && !accessError && phoneCookie && ticketsList.length === 1 && action !== 'select') {
-    const { data: singleReg } = await supabaseAdmin
-      .from('registrations')
-      .select('*')
-      .eq('id', ticketsList[0].id)
-      .eq('registration_status', 'PAID')
-      .maybeSingle();
-
-    if (singleReg) {
-      reg = singleReg;
-    }
-  }
-
-  // Double check multiple tickets if user loaded via direct link
-  if (reg && (!ticketsList || ticketsList.length <= 1)) {
-    const { data: siblingRegs } = await supabaseAdmin
-      .from('registrations')
-      .select('id')
-      .eq('phone', reg.phone)
-      .eq('registration_status', 'PAID');
-    if (siblingRegs && siblingRegs.length > 1) {
-      hasMultipleTickets = true;
-    }
-  }
-
-  // Check if ticket is scanned in entries table
+  // 4. Check entry status for active ticket
   if (reg) {
     const { data: entry } = await supabaseAdmin
       .from('entries')
       .select('entry_status')
       .eq('registration_id', reg.id)
       .maybeSingle();
-    
+
     if (entry) {
-      entryStatus = entry.entry_status; // e.g. 'ENTERED' or 'TEST_ENTERED'
+      entryStatus = entry.entry_status;
     }
   }
 
-  // 3. Render State A: Display Active Ticket
+  // 5. Render: Display Active Ticket
   if (reg) {
-    // Generate QR code
     let qrCodeDataUrl = '';
     try {
       qrCodeDataUrl = await QRCode.toDataURL(reg.ticket_token, {
@@ -154,19 +139,19 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
       console.error('Failed to generate QR code in My Ticket page:', qrErr);
     }
 
-    // Fetch payment method
+    // Payment method
     let paymentMethod = 'RAZORPAY';
     const { data: pay } = await supabaseAdmin
       .from('payments')
       .select('payment_method, payment_status')
       .eq('registration_id', reg.id)
       .maybeSingle();
-    
+
     if (pay?.payment_status === 'SUCCESS' && pay?.payment_method) {
       paymentMethod = pay.payment_method;
     }
 
-    // Generate signed URL for photo if it exists
+    // Photo
     const defaultPhotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a855f7'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>";
     let photoUrl = defaultPhotoUrl;
     if (reg.photo_path) {
@@ -243,7 +228,6 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
         `}</style>
 
         <div className="w-full max-w-sm space-y-6 print:max-w-none print:w-auto print-container">
-          
           <div 
             id="event-ticket" 
             className="print-ticket-card w-full rounded-3xl overflow-hidden glass-card border border-purple-500/20 relative shadow-2xl bg-[#0c0724]"
@@ -260,7 +244,6 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
 
             {/* Ticket Body */}
             <div className="p-8 space-y-6 flex flex-col items-center">
-              
               <div className="text-center w-full space-y-1">
                 <h2 className="text-2xl font-black font-outfit text-white tracking-widest print-text-dark uppercase">
                   ALGO-RHYTHM
@@ -351,7 +334,6 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
                   <span><strong>Venue:</strong> {EVENT_CONFIG.venue}</span>
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -366,7 +348,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
                 className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors uppercase tracking-wider flex items-center gap-1"
               >
                 <Ticket className="w-3.5 h-3.5" />
-                View My Other Tickets
+                View My Other Tickets ({ticketsList.length})
               </Link>
             )}
             <a
@@ -374,21 +356,20 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
               className="text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-wider flex items-center gap-1"
             >
               <LogOut className="w-3 h-3" />
-              Disconnect / Use Another Number
+              Disconnect / Exit Session
             </a>
           </div>
-
         </div>
       </div>
     );
   }
 
-  // 4. Render State A-2: Select Ticket from List
-  if (phoneCookie && ticketsList.length > 0) {
+  // 6. Render: Multiple Ticket Selection for Verified Session
+  if (ticketsList.length > 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
         <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
-        
+
         {/* Floating navbar/header */}
         <header className="w-full max-w-md flex justify-between items-center mb-8">
           <Link href="/" className="font-extrabold tracking-wide text-sm text-gradient-indigo-purple font-outfit">
@@ -407,17 +388,16 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
           </div>
         )}
 
-        <MultiTicketSelect tickets={ticketsList} phone={phoneCookie} />
+        <MultiTicketSelect tickets={ticketsList} phone={session.contact || phoneCookie || ''} />
       </div>
     );
   }
 
-  // 5. Render State B: Retrieve Ticket Form
+  // 7. Fallback: Retrieve Ticket Form
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
-      
-      {/* Floating navbar/header */}
+
       <header className="w-full max-w-md flex justify-between items-center mb-8">
         <Link href="/" className="font-extrabold tracking-wide text-sm text-gradient-indigo-purple font-outfit select-none">
           ALGO-RHYTHM
@@ -431,7 +411,7 @@ export default async function MyTicketPage({ searchParams }: MyTicketPageProps) 
       {(accessError || error) && (
         <div className="w-full max-w-md mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200 text-xs flex gap-3 items-start animate-fade-in">
           <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
-          <span>{accessError || 'Unable to retrieve ticket. Please verify your details.'}</span>
+          <span>{accessError || error || 'Unable to retrieve ticket. Please verify your contact.'}</span>
         </div>
       )}
 

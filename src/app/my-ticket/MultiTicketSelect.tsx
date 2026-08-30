@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Ticket, ArrowRight, User, LogOut, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface TicketItem {
   id: string;
@@ -18,23 +18,16 @@ interface MultiTicketSelectProps {
 }
 
 export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectProps) {
-  const router = useRouter();
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const handleSelect = (ticket: TicketItem) => {
-    if (loadingId) return; // Prevent double clicks
-    setLoadingId(ticket.id);
-
+  const handleTicketClick = (ticket: TicketItem) => {
+    setSelectedId(ticket.id);
     try {
-      // Set cookie for student_ticket_token for fallback and session persistence
       const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
       document.cookie = `student_ticket_token=${ticket.ticket_token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax${isSecure ? '; Secure' : ''}`;
     } catch (e) {
       console.warn('Could not set student_ticket_token cookie:', e);
     }
-
-    // Direct, unambiguous navigation to the specific registration
-    router.push(`/my-ticket?registration_id=${encodeURIComponent(ticket.id)}`);
   };
 
   return (
@@ -48,32 +41,28 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
 
         <h2 className="text-2xl font-bold font-outfit text-white">Multiple Tickets Found</h2>
         <p className="text-slate-400 text-xs mt-1.5 leading-relaxed">
-          We found {tickets.length} registrations matching phone number <strong className="text-slate-200">+91 {phone}</strong>. Select which ticket you want to view:
+          We found {tickets.length} registrations for <strong className="text-slate-200">{phone.includes('@') ? phone : `+91 ${phone}`}</strong>. Select which ticket you want to view:
         </p>
 
-        {/* Tickets list */}
+        {/* Tickets list using native Next.js Link for guaranteed 100% reliable navigation */}
         <div className="mt-6 space-y-3" role="list" aria-label="List of student tickets">
           {tickets.map((t) => {
-            const isCurrentLoading = loadingId === t.id;
-            const isAnyLoading = loadingId !== null;
+            const isOpening = selectedId === t.id;
 
             return (
-              <button
+              <Link
                 key={t.id}
-                type="button"
-                onClick={() => handleSelect(t)}
-                disabled={isAnyLoading}
+                href={`/my-ticket?registration_id=${encodeURIComponent(t.id)}`}
+                onClick={() => handleTicketClick(t)}
                 aria-label={`Open ticket for ${t.full_name} (${t.ticket_id})`}
                 className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all text-left group focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${
-                  isCurrentLoading
+                  isOpening
                     ? 'bg-purple-950/40 border-purple-500/50 cursor-wait'
-                    : isAnyLoading
-                    ? 'bg-white/5 border-white/5 opacity-50 cursor-not-allowed'
                     : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-purple-500/30 cursor-pointer active:scale-[0.99]'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg transition-colors ${isCurrentLoading ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-500/10 text-purple-300 group-hover:bg-purple-500/20'}`}>
+                  <div className={`p-2 rounded-lg transition-colors ${isOpening ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-500/10 text-purple-300 group-hover:bg-purple-500/20'}`}>
                     <User className="w-4 h-4" />
                   </div>
                   <div>
@@ -87,7 +76,7 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isCurrentLoading ? (
+                  {isOpening ? (
                     <div className="flex items-center gap-1.5 text-purple-400 text-xs font-semibold">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span className="text-[11px] hidden sm:inline">Opening...</span>
@@ -96,7 +85,7 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-purple-300 group-hover:translate-x-1 transition-all" />
                   )}
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>
@@ -114,4 +103,3 @@ export default function MultiTicketSelect({ tickets, phone }: MultiTicketSelectP
     </div>
   );
 }
-

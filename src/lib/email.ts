@@ -762,4 +762,189 @@ export async function sendMagicLinkEmail(email: string, name: string, link: stri
   }
 }
 
+export async function sendOtpEmail(email: string, otpCode: string, name?: string): Promise<boolean> {
+  const studentName = name || 'Student';
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Your Verification Code - ALGO-RHYTHM 2K26</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          background-color: #0d0620;
+          color: #ffffff;
+          margin: 0;
+          padding: 0;
+        }
+        .container {
+          max-width: 540px;
+          margin: 30px auto;
+          background: #130a2a;
+          border: 1px solid rgba(168, 85, 247, 0.2);
+          border-radius: 20px;
+          overflow: hidden;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+        .header {
+          background: linear-gradient(135deg, #7928ca 0%, #ff0080 100%);
+          padding: 28px 24px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 900;
+          letter-spacing: 2px;
+          color: #ffffff;
+          text-transform: uppercase;
+        }
+        .header p {
+          margin: 6px 0 0;
+          font-size: 11px;
+          letter-spacing: 1.5px;
+          color: rgba(255, 255, 255, 0.9);
+          text-transform: uppercase;
+          font-weight: 700;
+        }
+        .content {
+          padding: 32px 28px;
+          background: #130a2a;
+          color: #e2e8f0;
+        }
+        .greeting {
+          font-size: 16px;
+          font-weight: 600;
+          color: #f8fafc;
+          margin-bottom: 12px;
+        }
+        .text {
+          font-size: 13px;
+          line-height: 1.6;
+          color: #cbd5e1;
+          margin-bottom: 24px;
+        }
+        .otp-box {
+          background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%);
+          border: 1px solid rgba(168, 85, 247, 0.3);
+          border-radius: 16px;
+          padding: 24px 16px;
+          text-align: center;
+          margin: 24px 0;
+        }
+        .otp-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          color: #c084fc;
+          font-weight: 700;
+          margin-bottom: 8px;
+        }
+        .otp-code {
+          font-family: 'Courier New', Courier, monospace;
+          font-size: 38px;
+          font-weight: 900;
+          letter-spacing: 8px;
+          color: #ffffff;
+          text-shadow: 0 0 20px rgba(168, 85, 247, 0.6);
+        }
+        .otp-expiry {
+          font-size: 11px;
+          color: #f472b6;
+          margin-top: 8px;
+          font-weight: 600;
+        }
+        .warning {
+          font-size: 11px;
+          color: #94a3b8;
+          line-height: 1.5;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          padding-top: 18px;
+          margin-top: 20px;
+        }
+        .footer {
+          background: #0b051c;
+          padding: 16px;
+          text-align: center;
+          font-size: 10px;
+          color: #64748b;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>ALGO-RHYTHM 2K26</h1>
+          <p>Fresher Party Ticket Verification</p>
+        </div>
+        <div class="content">
+          <p class="greeting">Hello ${studentName},</p>
+          <p class="text">
+            A request was made to access your event ticket for <strong>ALGO-RHYTHM 2K26</strong>. Use the verification code below to view your ticket:
+          </p>
+          <div class="otp-box">
+            <div class="otp-label">One-Time Verification Code</div>
+            <div class="otp-code">${otpCode}</div>
+            <div class="otp-expiry">&#9201; Valid for 5 minutes only</div>
+          </div>
+          <p class="warning">
+            &#9888; <strong>Security Notice:</strong> Never share this code with anyone. Event coordinators will never ask for your verification code. If you did not request this, you can safely ignore this email.
+          </p>
+        </div>
+        <div class="footer">
+          School of Computing and Artificial Intelligence &bull; ALGO-RHYTHM 2026
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  // 1. Try Resend if configured
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const fromEmail = process.env.RESEND_FROM_EMAIL || 'ALGO-RHYTHM <noreply@resend.dev>';
+
+      const resendRes = await resend.emails.send({
+        from: fromEmail,
+        to: email,
+        subject: `Your ALGO-RHYTHM Ticket Code: ${otpCode}`,
+        html: htmlContent,
+      });
+
+      if (!resendRes.error) {
+        console.log(`[Resend Service] OTP email dispatched to ${email}. ID: ${resendRes.data?.id}`);
+        return true;
+      }
+      console.warn('[Resend Service] Resend error for OTP, falling back to Gmail:', resendRes.error);
+    } catch (resendErr) {
+      console.warn('[Resend Service] Resend exception for OTP, falling back to Gmail:', resendErr);
+    }
+  }
+
+  // 2. Gmail SMTP Fallback
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.error('[OTP Email] Neither Resend nor Gmail SMTP is configured.');
+    return false;
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: `ALGO-RHYTHM <${gmailUser}>`,
+      to: email,
+      subject: `Your ALGO-RHYTHM Ticket Code: ${otpCode}`,
+      html: htmlContent,
+    });
+    console.log(`[Gmail Service] OTP email sent successfully to ${email}. Msg ID: ${info.messageId}`);
+    return true;
+  } catch (err) {
+    console.error(`[Gmail Service] Failed to send OTP email to ${email}:`, err);
+    return false;
+  }
+}
+
 

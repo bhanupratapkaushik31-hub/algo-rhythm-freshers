@@ -4,6 +4,7 @@ export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const response = NextResponse.redirect(`${appUrl}/my-ticket`);
   
+  response.cookies.delete('ticket_access_session');
   response.cookies.delete('student_phone');
   response.cookies.delete('student_ticket_token');
   
@@ -14,6 +15,7 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const response = NextResponse.redirect(`${appUrl}/my-ticket`);
   
+  response.cookies.delete('ticket_access_session');
   response.cookies.delete('student_phone');
   response.cookies.delete('student_ticket_token');
   

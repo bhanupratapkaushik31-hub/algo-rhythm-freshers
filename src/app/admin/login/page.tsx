@@ -66,9 +66,10 @@ export default function AdminLogin() {
       }
 
       if (data.session) {
-        // Set the secure access token cookie so server API routes can verify admin roles
+        // Set the secure access token cookie so server API routes and proxy can verify admin roles
         const session = data.session;
-        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${session.expires_in}; SameSite=Lax`;
+        const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax${isSecure ? '; Secure' : ''}`;
         
         // Fetch role to redirect correctly
         const response = await fetch('/api/admin/profile', {

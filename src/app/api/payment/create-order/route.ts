@@ -60,16 +60,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Initialize Razorpay credentials & strict mode
-    const isProduction = process.env.NODE_ENV === 'production';
+    // 2. Initialize Razorpay credentials
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
     const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
-    // Simulator mode is strictly permanently forbidden in production
-    const isSimulatorAllowed = !isProduction && !isRazorpayConfigured && process.env.ALLOW_PAYMENT_SIMULATOR === 'true';
-
-    if (!isSimulatorAllowed && !isRazorpayConfigured) {
+    if (!isRazorpayConfigured) {
       console.error('[Create Order] Razorpay credentials missing or invalid in live mode.');
       return NextResponse.json({
         success: false,
@@ -99,9 +96,7 @@ export async function POST(request: NextRequest) {
       const orderCreatedAt = new Date(latestPayment.updated_at || latestPayment.created_at).getTime();
       const ageMinutes = (Date.now() - orderCreatedAt) / (1000 * 60);
 
-      const isRealRazorpayOrder = latestPayment.razorpay_order_id.startsWith('order_') &&
-        !latestPayment.razorpay_order_id.startsWith('order_pending_') &&
-        !latestPayment.razorpay_order_id.startsWith('order_sim_');
+      const isRealRazorpayOrder = latestPayment.razorpay_order_id.startsWith('order_') && !latestPayment.razorpay_order_id.includes('sim');
 
       if (isRealRazorpayOrder && ageMinutes < 15) {
         orderId = latestPayment.razorpay_order_id;
@@ -109,35 +104,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If no reusable order exists, generate a new one
+    // If no reusable order exists, generate a real live Razorpay order
     if (!orderId) {
-      if (isSimulatorAllowed) {
-        // Only in local development test simulation when explicitly enabled
-        orderId = `order_sim_${reg.id.substring(0, 8)}_${Date.now()}`;
-        console.log(`[Create Order] Generated dev simulator order: ${orderId}`);
-      } else {
-        // Production & Real Live Razorpay Gateway
-        const razorpay = new Razorpay({
-          key_id: keyId!,
-          key_secret: keySecret!,
-        });
+      const razorpay = new Razorpay({
+        key_id: keyId!,
+        key_secret: keySecret!,
+      });
 
-        const orderOptions = {
-          amount: amountInPaise,
-          currency: 'INR',
-          receipt: `rcpt_${reg.id.substring(0, 8)}_${Date.now().toString().slice(-4)}`,
-          notes: {
-            registration_id: reg.id,
-            registration_number: reg.registration_number,
-            full_name: reg.full_name,
-            email: reg.email,
-          },
-        };
+      const orderOptions = {
+        amount: amountInPaise,
+        currency: 'INR',
+        receipt: `rcpt_${reg.id.substring(0, 8)}_${Date.now().toString().slice(-4)}`,
+        notes: {
+          registration_id: reg.id,
+          registration_number: reg.registration_number,
+          full_name: reg.full_name,
+          email: reg.email,
+        },
+      };
 
-        const realOrder = await razorpay.orders.create(orderOptions);
-        orderId = realOrder.id;
-        console.log(`[Create Order] Successfully created Razorpay order: ${orderId} for registration: ${reg.id}`);
-      }
+      const realOrder = await razorpay.orders.create(orderOptions);
+      orderId = realOrder.id;
+      console.log(`[Create Order] Successfully created Razorpay order: ${orderId} for registration: ${reg.id}`);
     }
 
     // 4. Save/Update Payment record in database cleanly without duplicate records
@@ -212,7 +200,7 @@ export async function POST(request: NextRequest) {
         currency: 'INR',
         key_id: keyId || '',
         razorpay_configured: isRazorpayConfigured,
-        payment_mode: isSimulatorAllowed ? 'simulator' : 'live',
+        payment_mode: 'live',
         student: {
           name: reg.full_name,
           email: reg.email,

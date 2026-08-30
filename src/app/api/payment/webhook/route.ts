@@ -58,21 +58,27 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Webhook] Webhook received. Event: ${event}, Event ID: ${eventId}`);
 
-    // 3. Idempotency Check using webhook_events table
+    // 3. Atomic Idempotency Check using webhook_events table
     if (eventId) {
       try {
-        const { data: existingEvent } = await supabaseAdmin
+        const { error: insertErr } = await supabaseAdmin
           .from('webhook_events')
-          .select('id')
-          .eq('id', eventId)
-          .maybeSingle();
+          .insert({
+            id: eventId,
+            event_type: event,
+            processed_at: new Date().toISOString()
+          });
 
-        if (existingEvent) {
-          console.log(`[Webhook] Event ${eventId} has already been processed. Skipping (Idempotency).`);
-          return NextResponse.json({ success: true, message: 'Event already processed' });
+        if (insertErr) {
+          // 23505 is PostgreSQL unique constraint violation (id already exists)
+          if (insertErr.code === '23505' || insertErr.message?.includes('duplicate key')) {
+            console.log(`[Webhook] Event ${eventId} has already been processed or is in-flight. Skipping (Atomic Idempotency).`);
+            return NextResponse.json({ success: true, message: 'Event already processed' });
+          }
+          console.warn('[Webhook Warning] Could not insert into webhook_events table:', insertErr.message);
         }
       } catch (dbErr) {
-        console.warn('[Webhook Warning] Could not query webhook_events table for idempotency check (table may not exist yet):', dbErr);
+        console.warn('[Webhook Warning] Webhook events table access error:', dbErr);
       }
     }
 
@@ -238,21 +244,6 @@ export async function POST(request: NextRequest) {
     } else if (event === 'order.paid') {
       console.log(`[Webhook] Order paid logged. Let payment.captured event perform the verification.`);
       return NextResponse.json({ success: true, message: 'Order paid logged' });
-    }
-
-    // 5. Log processed webhook event in idempotency table
-    if (eventId) {
-      try {
-        await supabaseAdmin
-          .from('webhook_events')
-          .insert({
-            id: eventId,
-            event_type: event,
-            processed_at: new Date().toISOString()
-          });
-      } catch (insertEventErr) {
-        // Suppress warning if table is not migrated yet
-      }
     }
 
     return NextResponse.json({ success: true });

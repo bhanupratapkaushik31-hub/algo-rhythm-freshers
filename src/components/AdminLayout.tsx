@@ -39,9 +39,14 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session) {
+          document.cookie = 'sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
           router.push('/admin/login');
           return;
         }
+
+        // Keep server session cookie synchronized
+        const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax${isSecure ? '; Secure' : ''}`;
 
         // Fetch custom admin role details via server-side endpoint to bypass RLS recursion errors
         const response = await fetch('/api/admin/profile', {
