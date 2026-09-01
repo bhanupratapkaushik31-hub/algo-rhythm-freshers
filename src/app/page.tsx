@@ -26,7 +26,6 @@ export default function Home() {
   const [isRegOpen, setIsRegOpen] = useState(true);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEventStarted, setIsEventStarted] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   // 1. Live Countdown Timer Logic
   useEffect(() => {
@@ -53,16 +52,15 @@ export default function Home() {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
 
-    // Fetch registration status
+    // Fetch registration status in background without blocking initial render
     fetch('/api/admin/settings')
       .then(res => res.json())
       .then(res => {
-        if (res.success && res.data) {
+        if (res.success && res.data && typeof res.data.open === 'boolean') {
           setIsRegOpen(res.data.open);
         }
       })
-      .catch(err => console.error('Error fetching settings:', err))
-      .finally(() => setLoading(false));
+      .catch(err => console.error('Error fetching settings:', err));
 
     return () => clearInterval(interval);
   }, []);

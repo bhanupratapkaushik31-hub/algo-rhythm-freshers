@@ -4,7 +4,6 @@ import React, { useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import confetti from 'canvas-confetti';
 import { CheckCircle2, Ticket, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
 import { EVENT_CONFIG } from '@/config/event';
 
@@ -17,28 +16,32 @@ function SuccessContent() {
     if (token) {
       document.cookie = `student_ticket_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax; Secure`;
     }
-    confetti({
-      particleCount: 120,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
 
-    const timer = setTimeout(() => {
+    import('canvas-confetti').then((module) => {
+      const confetti = module.default;
       confetti({
-        particleCount: 80,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0 }
+        particleCount: 120,
+        spread: 70,
+        origin: { y: 0.6 }
       });
-      confetti({
-        particleCount: 80,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1 }
-      });
-    }, 450);
 
-    return () => clearTimeout(timer);
+      const timer = setTimeout(() => {
+        confetti({
+          particleCount: 80,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 }
+        });
+        confetti({
+          particleCount: 80,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 }
+        });
+      }, 450);
+
+      return () => clearTimeout(timer);
+    }).catch(err => console.warn('Confetti load error:', err));
   }, [token]);
 
   return (

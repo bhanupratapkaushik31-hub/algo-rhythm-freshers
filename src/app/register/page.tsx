@@ -36,17 +36,16 @@ export default function Register() {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // 1. Check registration portal status on mount
+  // 1. Check registration portal status on mount in background
   useEffect(() => {
     fetch('/api/admin/settings')
       .then(res => res.json())
       .then(res => {
-        if (res.success && res.data) {
+        if (res.success && res.data && typeof res.data.open === 'boolean') {
           setPortalClosed(!res.data.open);
         }
       })
-      .catch(err => console.error('Error reading portal status:', err))
-      .finally(() => setCheckingStatus(false));
+      .catch(err => console.error('Error reading portal status:', err));
   }, []);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,12 +294,7 @@ export default function Register() {
         {/* Glow border overlay */}
         <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-purple-500 to-transparent" />
 
-        {checkingStatus ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-4">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-            <p className="text-slate-400 text-xs tracking-wider uppercase font-semibold">Verifying Portal Status...</p>
-          </div>
-        ) : portalClosed ? (
+        {portalClosed ? (
           <div className="py-12 text-center flex flex-col items-center justify-center max-w-md mx-auto">
             <div className="p-4 rounded-full bg-slate-800 border border-slate-700 text-slate-400 mb-6">
               <AlertTriangle className="w-8 h-8 text-amber-500" />

@@ -79,24 +79,27 @@ body {
   background: rgba(168, 85, 247, 0.6);
 }
 
-/* Utility Animations */
+/* Utility Animations - GPU Accelerated */
 @keyframes float {
   0%, 100% {
-    transform: translateY(0px) rotate(0deg);
+    transform: translate3d(0, 0px, 0) rotate(0deg);
   }
   50% {
-    transform: translateY(-15px) rotate(3deg);
+    transform: translate3d(0, -15px, 0) rotate(3deg);
   }
 }
 
 .animate-float-slow {
   animation: float 8s ease-in-out infinite;
+  will-change: transform;
 }
 
 .animate-float-medium {
   animation: float 6s ease-in-out infinite;
+  will-change: transform;
 }
 
 .animate-float-fast {
   animation: float 4s ease-in-out infinite;
+  will-change: transform;
 }

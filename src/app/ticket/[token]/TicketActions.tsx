@@ -3,8 +3,6 @@
 import React, { useState } from 'react';
 import { Download, Image as ImageIcon, Printer, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import html2canvas from 'html2canvas-pro';
-import { jsPDF } from 'jspdf';
 
 interface TicketActionsProps {
   ticketId: string;
@@ -66,6 +64,9 @@ export default function TicketActions({ ticketId, registrationNumber }: TicketAc
     setDownloadingImage(true);
     setErrorMessage(null);
     try {
+      // Load html2canvas dynamically on-demand
+      const html2canvas = (await import('html2canvas-pro')).default;
+
       // Wait for fonts & QR image to load
       await waitAllImagesAndFonts(element);
 
@@ -103,6 +104,14 @@ export default function TicketActions({ ticketId, registrationNumber }: TicketAc
     setDownloadingPdf(true);
     setErrorMessage(null);
     try {
+      // Load html2canvas and jsPDF dynamically on-demand
+      const [html2canvasModule, jsPDFModule] = await Promise.all([
+        import('html2canvas-pro'),
+        import('jspdf')
+      ]);
+      const html2canvas = html2canvasModule.default;
+      const { jsPDF } = jsPDFModule;
+
       // Wait for fonts & QR image to load
       await waitAllImagesAndFonts(element);
 

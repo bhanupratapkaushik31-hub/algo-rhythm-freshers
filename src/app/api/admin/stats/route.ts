@@ -13,70 +13,45 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
 
-    // 2. Fetch all required counts
-    // Total Registrations
-    const { count: totalReg, error: err1 } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true });
+    // 2. Fetch all required counts concurrently in parallel
+    const [
+      { count: totalReg, error: err1 },
+      { count: paidReg, error: err2 },
+      { count: pendingReg, error: err3 },
+      { count: failedPayments, error: errPayments },
+      { count: modelingYes, error: errModelingYes },
+      { count: modelingNo, error: errModelingNo },
+      { count: emailsSent, error: errEmailsSent },
+      { count: emailsFailed, error: errEmailsFailed },
+      { count: liveEntriesCount, error: errEntries },
+      { data: paymentsData, error: err4 }
+    ] = await Promise.all([
+      // Total Registrations
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }),
+      // Paid Registrations
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('registration_status', 'PAID'),
+      // Pending Registrations
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('registration_status', 'PENDING'),
+      // Failed Payments
+      supabaseAdmin.from('payments').select('*', { count: 'exact', head: true }).eq('payment_status', 'FAILED'),
+      // Modeling - Yes
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('modeling', 'Yes'),
+      // Modeling - No
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('modeling', 'No'),
+      // Emails - Sent
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('email_status', 'SENT'),
+      // Emails - Failed
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('email_status', 'FAILED'),
+      // Entries Completed (Live check-ins)
+      supabaseAdmin.from('entries').select('*', { count: 'exact', head: true }).eq('entry_status', 'ENTERED'),
+      // Total Collection (Revenue calculation from successful payments)
+      supabaseAdmin.from('payments').select('amount').eq('payment_status', 'SUCCESS')
+    ]);
 
-    // Paid Registrations
-    const { count: paidReg, error: err2 } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('registration_status', 'PAID');
-
-    // Pending Registrations
-    const { count: pendingReg, error: err3 } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('registration_status', 'PENDING');
-
-    // Failed Payments
-    const { count: failedPayments, error: errPayments } = await supabaseAdmin
-      .from('payments')
-      .select('*', { count: 'exact', head: true })
-      .eq('payment_status', 'FAILED');
-
-    // Modeling - Yes
-    const { count: modelingYes, error: errModelingYes } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('modeling', 'Yes');
-
-    // Modeling - No
-    const { count: modelingNo, error: errModelingNo } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('modeling', 'No');
-
-    // Emails - Sent
-    const { count: emailsSent, error: errEmailsSent } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('email_status', 'SENT');
-
-    // Emails - Failed
-    const { count: emailsFailed, error: errEmailsFailed } = await supabaseAdmin
-      .from('registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('email_status', 'FAILED');
-
-    // Entries Completed (Count only live check-ins where entry_status is ENTERED, excluding TEST_ENTERED)
     let entriesCompleted = 0;
-    const { count: liveEntriesCount, error: errEntries } = await supabaseAdmin
-      .from('entries')
-      .select('*', { count: 'exact', head: true })
-      .eq('entry_status', 'ENTERED');
-
     if (!errEntries) {
       entriesCompleted = liveEntriesCount || 0;
     }
-
-    // Total Collection (Revenue calculation from successful payments)
-    const { data: paymentsData, error: err4 } = await supabaseAdmin
-      .from('payments')
-      .select('amount')
-      .eq('payment_status', 'SUCCESS');
 
     // Error handling
     if (err1 || err2 || err3 || errPayments || errModelingYes || errModelingNo || errEmailsSent || errEmailsFailed || errEntries || err4) {
