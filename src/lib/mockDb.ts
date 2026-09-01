@@ -25,7 +25,7 @@ export function readMockDb(): MockDbSchema {
           event_details: {
             name: "ALGO-RHYTHM",
             title: "ALGO-RHYTHM – CSE Fresher Party 2026 🎉",
-            fee: 50,
+            fee: 100,
             date: "9 September 2026",
             time: "1:00 PM onwards",
             venue: "Baldev Raj Mittal Unipolis"

@@ -8,8 +8,8 @@ export const EVENT_CONFIG = {
   displayTime: "1:00 PM onwards",
   venue: "Baldev Raj Mittal Unipolis",
   hostedBy: "School of Computing and Artificial Intelligence",
-  registrationFee: 50, // in INR
-  registrationFeePaise: 5000, // in Paise (for Razorpay API)
+  registrationFee: 100, // in INR
+  registrationFeePaise: 10000, // in Paise (for Razorpay API)
   contacts: [
     { name: "Bhanu Pratap Kaushik", phone: "8273930552" },
     { name: "Vaidya Vaibhava", phone: "9441262727" }
