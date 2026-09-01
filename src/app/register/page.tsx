@@ -118,15 +118,20 @@ export default function Register() {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       school_name: "School of Computing and Artificial Intelligence",
       modeling: "No",
+      modeling_talent: null,
       photo_path: "",
     }
   });
+
+  // Watch the modeling field to conditionally show/hide the talent field
+  const modelingValue = watch('modeling');
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
@@ -362,7 +367,14 @@ export default function Register() {
                   </label>
                   <select
                     className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-4 py-3 text-sm text-slate-300 transition-colors outline-none cursor-pointer appearance-none"
-                    {...register('modeling')}
+                    {...register('modeling', {
+                      onChange: (e) => {
+                        // When switching to No, clear the talent field so no stale data submits
+                        if (e.target.value === 'No') {
+                          setValue('modeling_talent', null, { shouldValidate: false });
+                        }
+                      }
+                    })}
                   >
                     <option value="No" className="bg-[#0f0a24] text-white">No</option>
                     <option value="Yes" className="bg-[#0f0a24] text-white">Yes</option>
@@ -371,6 +383,37 @@ export default function Register() {
                     <p className="text-[10px] text-red-400 font-semibold">{errors.modeling.message}</p>
                   )}
                 </div>
+
+                {/* 4b. Conditional Modeling Talent Field — only visible when modeling = 'Yes' */}
+                <AnimatePresence>
+                  {modelingValue === 'Yes' && (
+                    <motion.div
+                      key="modeling-talent-field"
+                      initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                      animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+                      exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      className="space-y-2 md:col-span-2"
+                    >
+                      <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block flex items-center gap-1.5">
+                        What is your talent / what would you like to perform? *
+                        <Sparkles className="w-3.5 h-3.5 text-pink-400" />
+                      </label>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Tell us what you are good at or what you would like to perform during the modeling segment.
+                      </p>
+                      <textarea
+                        rows={3}
+                        placeholder="Example: Ramp walk, dance, singing, acting, poetry, mimicry, instrument, etc."
+                        className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 transition-colors outline-none resize-none"
+                        {...register('modeling_talent')}
+                      />
+                      {errors.modeling_talent && (
+                        <p className="text-[10px] text-red-400 font-semibold">{errors.modeling_talent.message}</p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* 5. Phone Number */}
                 <div className="space-y-2">

@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     
-    // 1. Validate Input
+    // 1. Validate Input (includes cross-field modeling/modeling_talent check via superRefine)
     const parseResult = registerSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json({
@@ -45,7 +45,24 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Check if registration is open
+    // 2. Server-side enforcement of modeling_talent logic
+    // ALWAYS force null if modeling is No, regardless of what client sends.
+    // If modeling is Yes but talent is blank/missing, reject.
+    const modeling_talent: string | null = data.modeling === 'Yes'
+      ? (data.modeling_talent?.trim() || null)
+      : null;
+
+    if (data.modeling === 'Yes' && !modeling_talent) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Please tell us about your talent or what you would like to perform.'
+        }
+      }, { status: 400 });
+    }
+
+    // 3. Check if registration is open
     const { data: statusSetting, error: settingsError } = await supabaseAdmin
       .from('settings')
       .select('value')
@@ -67,7 +84,7 @@ export async function POST(request: NextRequest) {
       }, { status: 403 });
     }
 
-    // 3. Check for existing registration
+    // 4. Check for existing registration
     const { data: existingReg, error: fetchError } = await supabaseAdmin
       .from('registrations')
       .select('*')
@@ -103,6 +120,7 @@ export async function POST(request: NextRequest) {
             year: data.year,
             school_name: data.school_name,
             modeling: data.modeling,
+            modeling_talent: modeling_talent,
             phone: data.phone,
             email: data.email,
             photo_path: data.photo_path,
@@ -154,7 +172,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Create new registration
+    // 5. Create new registration
     const ticketToken = crypto.randomBytes(24).toString('hex');
     const { data: newReg, error: insertError } = await supabaseAdmin
       .from('registrations')
@@ -164,6 +182,7 @@ export async function POST(request: NextRequest) {
         year: data.year,
         school_name: data.school_name,
         modeling: data.modeling,
+        modeling_talent: modeling_talent,
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,

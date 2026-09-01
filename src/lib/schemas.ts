@@ -21,6 +21,12 @@ export const registerSchema = z.object({
   modeling: z.enum(['Yes', 'No'], {
     errorMap: () => ({ message: "Please select whether you want to enroll for modeling." }),
   }),
+  modeling_talent: z
+    .string()
+    .trim()
+    .max(1000, "Please keep your description under 1000 characters.")
+    .optional()
+    .nullable(),
   phone: z
     .string()
     .trim()
@@ -32,6 +38,15 @@ export const registerSchema = z.object({
   photo_path: z
     .string()
     .optional(),
+}).superRefine((data, ctx) => {
+  // Cross-field validation: modeling_talent is required when modeling = 'Yes'
+  if (data.modeling === 'Yes' && !data.modeling_talent?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['modeling_talent'],
+      message: 'Please tell us about your talent or what you would like to perform.',
+    });
+  }
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

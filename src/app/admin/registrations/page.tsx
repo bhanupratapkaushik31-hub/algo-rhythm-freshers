@@ -45,6 +45,7 @@ interface RegistrationDetail {
   year: '1st Year' | '2nd Year';
   school_name: string;
   modeling: 'Yes' | 'No';
+  modeling_talent?: string | null;
   phone: string;
   email: string;
   registration_status: 'PENDING' | 'PAID' | 'CANCELLED';
@@ -274,7 +275,7 @@ export default function AdminRegistrations() {
       const data: RegistrationDetail[] = res.data.registrations;
       const headers = [
         "Registration No.", "Full Name", "Year", "School Name",
-        "Modeling", "Phone", "Email", "Payment Status",
+        "Modeling", "Modeling Talent / Performance", "Phone", "Email", "Payment Status",
         "Ticket ID", "Email Status", "Entry Status", "Entry Time",
         "Coordinator"
       ];
@@ -285,6 +286,7 @@ export default function AdminRegistrations() {
         r.year,
         r.school_name,
         r.modeling,
+        r.modeling === 'Yes' ? (r.modeling_talent || 'Not provided') : '--',
         r.phone,
         r.email,
         r.registration_status,
@@ -692,6 +694,20 @@ export default function AdminRegistrations() {
                     <span className="text-slate-500">Modeling Participant:</span>
                     <span className="font-bold text-slate-200">{selectedReg.modeling}</span>
                   </div>
+                  {/* Modeling Talent / Performance */}
+                  {selectedReg.modeling === 'Yes' ? (
+                    <div className="flex flex-col gap-1 border-t border-white/5 pt-2 mt-1">
+                      <span className="text-slate-500">Modeling Talent / Performance:</span>
+                      <span className="text-slate-200 text-right leading-relaxed break-words">
+                        {selectedReg.modeling_talent || <span className="text-slate-500 italic">Not provided</span>}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Modeling Talent / Performance:</span>
+                      <span className="text-slate-500 italic">Not interested</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-slate-500">Phone:</span>
                     <a href={`tel:${selectedReg.phone}`} className="font-bold text-purple-300 hover:text-purple-200">{selectedReg.phone}</a>
