@@ -183,6 +183,10 @@ function PaymentContent() {
     }
 
     try {
+      // Sanitize phone: Razorpay prefill.contact must be digits only (Indian 10-digit)
+      const rawPhone = paymentData.student?.phone || '';
+      const sanitizedPhone = rawPhone.replace(/\D/g, '').slice(-10);
+
       const options = {
         key: paymentData.key_id,
         amount: paymentData.amount,
@@ -226,7 +230,7 @@ function PaymentContent() {
         prefill: {
           name: paymentData.student?.name || '',
           email: paymentData.student?.email || '',
-          contact: paymentData.student?.phone || '',
+          contact: sanitizedPhone,
         },
         theme: {
           color: '#a855f7',

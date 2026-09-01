@@ -91,16 +91,30 @@ export async function POST(request: NextRequest) {
     let orderId = '';
     const latestPayment = existingPayments && existingPayments.length > 0 ? existingPayments[0] : null;
 
-    // Check if we can safely reuse a recent pending Razorpay order (created within last 15 minutes)
+    // Check if we can safely reuse a recent genuine Razorpay order (created within last 15 minutes).
+    // IMPORTANT: The register route pre-populates a fake placeholder like `order_pending_xxx`.
+    // These must NEVER be passed to Razorpay checkout — they don't exist as real orders.
     if (latestPayment && latestPayment.payment_status === 'PENDING' && latestPayment.razorpay_order_id) {
       const orderCreatedAt = new Date(latestPayment.updated_at || latestPayment.created_at).getTime();
       const ageMinutes = (Date.now() - orderCreatedAt) / (1000 * 60);
 
-      const isRealRazorpayOrder = latestPayment.razorpay_order_id.startsWith('order_') && !latestPayment.razorpay_order_id.includes('sim');
+      // A genuine Razorpay order ID starts with 'order_' but is NOT a local placeholder.
+      // Must exclude: order_pending_*, order_sim_*, order_mock_*, any 'sim' substring.
+      const ordId = latestPayment.razorpay_order_id;
+      const isRealRazorpayOrder =
+        ordId.startsWith('order_') &&
+        !ordId.startsWith('order_pending_') &&
+        !ordId.startsWith('order_sim_') &&
+        !ordId.startsWith('order_mock_') &&
+        !ordId.includes('sim');
 
       if (isRealRazorpayOrder && ageMinutes < 15) {
-        orderId = latestPayment.razorpay_order_id;
-        console.log(`[Create Order] Reusing existing valid Razorpay order: ${orderId} for registration: ${reg.id}`);
+        orderId = ordId;
+        console.log(`[Create Order] Reusing genuine Razorpay order: ${orderId} for registration: ${reg.id}`);
+      } else if (!isRealRazorpayOrder) {
+        console.log(`[Create Order] Skipping placeholder/fake order ID "${ordId}" — will create a fresh real order.`);
+      } else {
+        console.log(`[Create Order] Existing order is stale (${ageMinutes.toFixed(1)} min old) — will create a fresh real order.`);
       }
     }
 
