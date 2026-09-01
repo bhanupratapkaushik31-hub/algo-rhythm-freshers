@@ -35,12 +35,14 @@ export async function POST(request: NextRequest) {
     const base64Data = fileBase64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
-    // Enforce 2 MB maximum buffer size
-    const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+    // Enforce 150 KB maximum buffer size.
+    // Client-side adaptive compression targets <=50 KB; 150 KB gives safe headroom
+    // while preventing uncompressed images from consuming server resources.
+    const MAX_PHOTO_BYTES = 150 * 1024;
     if (buffer.length > MAX_PHOTO_BYTES) {
       return NextResponse.json({
         success: false,
-        error: { code: 'FILE_TOO_LARGE', message: 'Photo file size exceeds maximum limit of 2MB.' }
+        error: { code: 'FILE_TOO_LARGE', message: 'Photo file size exceeds the maximum allowed size. Please re-upload your photo.' }
       }, { status: 400 });
     }
 
@@ -48,6 +50,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: { code: 'INVALID_FILE', message: 'Image data is invalid or empty.' }
+      }, { status: 400 });
+    }
+
+    // Basic magic-byte validation: JPEG starts with FF D8 FF, PNG starts with 89 50 4E 47.
+    // Rejects files that are not actually images regardless of the declared MIME type.
+    const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+    const isPng  = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
+    if (!isJpeg && !isPng) {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'INVALID_FILE', message: 'Uploaded file does not appear to be a valid image. Please upload a JPG or PNG photo.' }
       }, { status: 400 });
     }
 

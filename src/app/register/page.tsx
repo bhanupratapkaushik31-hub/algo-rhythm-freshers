@@ -59,9 +59,9 @@ export default function Register() {
     }
 
     // Guard against excessively huge files before memory reading
-    const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB input guard
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setPhotoError('Selected photo is too large (exceeds 5MB). Please choose a smaller photo.');
+      setPhotoError('Selected photo is too large (exceeds 10MB). Please choose a smaller photo.');
       return;
     }
 
@@ -69,46 +69,81 @@ export default function Register() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Compress using Canvas
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400;
-        const MAX_HEIGHT = 400;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
         const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // Compress to 70% quality JPEG
-          setPhotoPreview(compressedBase64);
-          setPhotoBase64(compressedBase64);
-          setPhotoMimeType('image/jpeg');
-          setValue('photo_path', 'prepared');
-          setPhotoError(null);
-        } else {
-          // Fallback if canvas context fails
-          setPhotoPreview(event.target?.result as string);
-          setPhotoBase64(event.target?.result as string);
-          setPhotoMimeType(file.type);
-          setValue('photo_path', 'prepared');
-          setPhotoError(null);
+        if (!ctx) {
+          setPhotoError('Your browser could not process this image. Please try a different photo.');
+          return;
         }
+
+        // Target: <=50 KB stored binary. Base64 inflates by ~4/3, so we check
+        // approximate decoded size = base64Length * 0.75 <= 51200 bytes.
+        const TARGET_BYTES = 50 * 1024;
+
+        // Adaptive compression: try progressively smaller dimensions + lower quality.
+        // Stops immediately once output is within target. Uses the best (smallest)
+        // result obtained if the target cannot be reached, rather than failing.
+        const attempts = [
+          { maxDim: 600, quality: 0.80 },
+          { maxDim: 600, quality: 0.65 },
+          { maxDim: 500, quality: 0.65 },
+          { maxDim: 500, quality: 0.50 },
+          { maxDim: 400, quality: 0.55 },
+          { maxDim: 400, quality: 0.40 },
+          { maxDim: 320, quality: 0.45 },
+          { maxDim: 320, quality: 0.30 },
+        ];
+
+        const scaleToFit = (maxDim: number) => {
+          let w = img.width;
+          let h = img.height;
+          if (w > h) {
+            if (w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+          } else {
+            if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          return { w, h };
+        };
+
+        let bestResult = '';
+        let bestBytes = Infinity;
+
+        for (const { maxDim, quality } of attempts) {
+          const { w, h } = scaleToFit(maxDim);
+          canvas.width = w;
+          canvas.height = h;
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const base64Part = dataUrl.split(',')[1] || '';
+          const approxBytes = Math.round(base64Part.length * 0.75);
+          if (approxBytes < bestBytes) {
+            bestBytes = approxBytes;
+            bestResult = dataUrl;
+          }
+          if (approxBytes <= TARGET_BYTES) break; // within target, stop early
+        }
+
+        if (!bestResult) {
+          setPhotoError('Please upload a valid photo. The image could not be optimized.');
+          return;
+        }
+
+        setPhotoPreview(bestResult);
+        setPhotoBase64(bestResult);
+        setPhotoMimeType('image/jpeg');
+        setValue('photo_path', 'prepared');
+        setPhotoError(null);
+      };
+
+      img.onerror = () => {
+        setPhotoError('Please upload a valid photo. The image could not be processed.');
       };
       img.src = event.target?.result as string;
+    };
+
+    reader.onerror = () => {
+      setPhotoError('Could not read the selected file. Please try again.');
     };
     reader.readAsDataURL(file);
   };
