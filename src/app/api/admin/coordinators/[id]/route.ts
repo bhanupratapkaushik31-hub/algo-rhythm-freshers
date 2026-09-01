@@ -29,11 +29,46 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { name, active, password, role } = await request.json();
 
+    // Fetch target user's current profile to prevent lower-privilege admins from modifying super_admins
+    const { data: targetAdmin } = await supabaseAdmin
+      .from('admins')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    // Only super_admin can change user roles
+    if (role !== undefined && role !== targetAdmin?.role) {
+      if (admin.role !== 'super_admin') {
+        return NextResponse.json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Only Super Administrators can modify account roles.' }
+        }, { status: 403 });
+      }
+    }
+
+    // Only super_admin or the account owner can change password
+    if (password) {
+      if (admin.role !== 'super_admin' && admin.id !== id) {
+        return NextResponse.json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Only Super Administrators can reset passwords for other accounts.' }
+        }, { status: 403 });
+      }
+    }
+
+    // Non-super-admins cannot modify super_admin accounts
+    if (targetAdmin?.role === 'super_admin' && admin.role !== 'super_admin') {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to modify a Super Administrator account.' }
+      }, { status: 403 });
+    }
+
     // 2. Prepare database updates
-    const updates: any = {};
+    const updates: any = { updated_at: new Date().toISOString() };
     if (name !== undefined) updates.name = name;
     if (active !== undefined) updates.active = active;
-    if (role !== undefined) updates.role = role;
+    if (role !== undefined && admin.role === 'super_admin') updates.role = role;
 
     // 3. Perform profile updates in database
     if (Object.keys(updates).length > 0) {

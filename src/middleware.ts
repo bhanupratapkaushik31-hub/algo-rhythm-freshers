@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Next.js 16 Proxy for Server-Side Route Protection.
- * Protects administrative and coordinator routes against unauthenticated access.
+ * Standard Next.js Middleware for Server-Side Route Protection.
+ * Protects administrative and coordinator pages against unauthenticated access.
  */
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow login pages through
@@ -29,7 +29,7 @@ export function proxy(request: NextRequest) {
     const token = request.cookies.get('sb-access-token')?.value;
 
     if (!token) {
-      const loginUrl = new URL('/admin/login', request.url);
+      const loginUrl = new URL('/coordinator/login', request.url);
       loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
     }

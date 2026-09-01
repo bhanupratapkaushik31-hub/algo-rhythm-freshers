@@ -1,10 +1,21 @@
 import crypto from 'crypto';
 import { supabaseAdmin } from './supabaseAdmin';
 
-const OTP_SECRET = process.env.SESSION_SECRET || 
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 
-  process.env.RAZORPAY_KEY_SECRET || 
-  'algorhythm-ticket-auth-secret-key-2026';
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || 
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 
+    process.env.RAZORPAY_KEY_SECRET;
+
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[CRITICAL SECURITY ERROR] SESSION_SECRET or SUPABASE_SERVICE_ROLE_KEY is not defined in environment variables.');
+    }
+    return 'algorhythm-ticket-auth-secret-key-2026';
+  }
+  return secret;
+}
+
+const OTP_SECRET = getSessionSecret();
 
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds

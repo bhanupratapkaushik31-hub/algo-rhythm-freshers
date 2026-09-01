@@ -32,6 +32,7 @@ export default function Register() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoMimeType, setPhotoMimeType] = useState<string | null>(null);
+  const [photoSizeKb, setPhotoSizeKb] = useState<number | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -59,9 +60,9 @@ export default function Register() {
     }
 
     // Guard against excessively huge files before memory reading
-    const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB input guard
+    const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12 MB input guard
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setPhotoError('Selected photo is too large (exceeds 10MB). Please choose a smaller photo.');
+      setPhotoError('Selected photo is too large (exceeds 12MB). Please choose a smaller photo.');
       return;
     }
 
@@ -76,52 +77,60 @@ export default function Register() {
           return;
         }
 
-        // Target: <=50 KB stored binary. Base64 inflates by ~4/3, so we check
-        // approximate decoded size = base64Length * 0.75 <= 51200 bytes.
-        const TARGET_BYTES = 50 * 1024;
+        // Enable high-quality image smoothing
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
-        // Adaptive compression: try progressively smaller dimensions + lower quality.
-        // Stops immediately once output is within target. Uses the best (smallest)
-        // result obtained if the target cannot be reached, rather than failing.
+        // Target: <= 40 KB stored binary.
+        const TARGET_BYTES = 40 * 1024;
+
+        // Adaptive compression parameters: try max dimensions and quality levels
         const attempts = [
-          { maxDim: 600, quality: 0.80 },
-          { maxDim: 600, quality: 0.65 },
-          { maxDim: 500, quality: 0.65 },
-          { maxDim: 500, quality: 0.50 },
+          { maxDim: 480, quality: 0.75 },
+          { maxDim: 400, quality: 0.70 },
           { maxDim: 400, quality: 0.55 },
-          { maxDim: 400, quality: 0.40 },
+          { maxDim: 360, quality: 0.50 },
           { maxDim: 320, quality: 0.45 },
-          { maxDim: 320, quality: 0.30 },
+          { maxDim: 280, quality: 0.40 },
         ];
-
-        const scaleToFit = (maxDim: number) => {
-          let w = img.width;
-          let h = img.height;
-          if (w > h) {
-            if (w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
-          } else {
-            if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
-          }
-          return { w, h };
-        };
 
         let bestResult = '';
         let bestBytes = Infinity;
 
+        // Perform smart centered crop (1:1 aspect ratio or proportional fit)
+        const sourceWidth = img.naturalWidth || img.width;
+        const sourceHeight = img.naturalHeight || img.height;
+
+        // Calculate center crop square
+        const minDim = Math.min(sourceWidth, sourceHeight);
+        const cropX = Math.round((sourceWidth - minDim) / 2);
+        const cropY = Math.round((sourceHeight - minDim) / 2);
+
         for (const { maxDim, quality } of attempts) {
-          const { w, h } = scaleToFit(maxDim);
-          canvas.width = w;
-          canvas.height = h;
-          ctx.clearRect(0, 0, w, h);
-          ctx.drawImage(img, 0, 0, w, h);
+          const targetDim = Math.min(maxDim, minDim);
+          canvas.width = targetDim;
+          canvas.height = targetDim;
+          ctx.clearRect(0, 0, targetDim, targetDim);
+
+          // Draw cropped center square
+          ctx.drawImage(
+            img,
+            cropX, cropY, minDim, minDim, // source rectangle
+            0, 0, targetDim, targetDim    // destination rectangle
+          );
+
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
           const base64Part = dataUrl.split(',')[1] || '';
           const approxBytes = Math.round(base64Part.length * 0.75);
+
           if (approxBytes < bestBytes) {
             bestBytes = approxBytes;
             bestResult = dataUrl;
           }
-          if (approxBytes <= TARGET_BYTES) break; // within target, stop early
+
+          if (approxBytes <= TARGET_BYTES) {
+            break; // within target, stop early
+          }
         }
 
         if (!bestResult) {
@@ -129,6 +138,8 @@ export default function Register() {
           return;
         }
 
+        const finalSizeKb = Math.max(1, Math.round(bestBytes / 1024));
+        setPhotoSizeKb(finalSizeKb);
         setPhotoPreview(bestResult);
         setPhotoBase64(bestResult);
         setPhotoMimeType('image/jpeg');
@@ -530,16 +541,24 @@ export default function Register() {
                           />
                         </div>
                         <div className="text-center sm:text-left space-y-2">
-                          <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 justify-center sm:justify-start">
-                            <CheckCircle2 className="w-4 h-4" />
-                            Photo Prepared Successfully
-                          </p>
+                          <div className="flex flex-col sm:flex-row items-center gap-2">
+                            <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 justify-center sm:justify-start">
+                              <CheckCircle2 className="w-4 h-4" />
+                              Photo Optimized
+                            </p>
+                            {photoSizeKb && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+                                ~{photoSizeKb} KB
+                              </span>
+                            )}
+                          </div>
                           <button
                             type="button"
                             onClick={() => {
                               setPhotoPreview(null);
                               setPhotoBase64(null);
                               setPhotoMimeType(null);
+                              setPhotoSizeKb(null);
                               setValue('photo_path', '');
                             }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold rounded-lg uppercase tracking-wider transition-colors cursor-pointer"

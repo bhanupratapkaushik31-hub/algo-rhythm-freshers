@@ -35,10 +35,10 @@ export async function POST(request: NextRequest) {
     const base64Data = fileBase64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
-    // Enforce 150 KB maximum buffer size.
-    // Client-side adaptive compression targets <=50 KB; 150 KB gives safe headroom
-    // while preventing uncompressed images from consuming server resources.
-    const MAX_PHOTO_BYTES = 150 * 1024;
+    // Enforce 100 KB maximum buffer size.
+    // Client-side adaptive compression targets <=40 KB; 100 KB gives safe headroom
+    // while preventing uncompressed images from consuming server/storage resources.
+    const MAX_PHOTO_BYTES = 100 * 1024;
     if (buffer.length > MAX_PHOTO_BYTES) {
       return NextResponse.json({
         success: false,

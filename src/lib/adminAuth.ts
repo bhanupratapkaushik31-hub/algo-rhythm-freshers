@@ -37,34 +37,37 @@ export async function verifyAdminAuth(
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return null;
 
-    // Fetch details and role from the custom admins table
+    // Fetch details and role from the custom admins table (check by id or email)
     let { data: adminRecord, error: adminErr } = await supabaseAdmin
       .from('admins')
       .select('*')
       .eq('id', user.id)
       .maybeSingle();
 
-    // Auto-seed ground-truth super admins if they exist in Auth but not custom table
-    const isGroundTruthSuperAdmin = user.email === 'scailpu@gmail.com' || user.email === 'bhanupratapias2005@gmail.com';
-    
-    if (isGroundTruthSuperAdmin && (!adminRecord || adminRecord.role !== 'super_admin')) {
-      console.log(`[verifyAdminAuth] Auto-seeding super admin profile for ground-truth email: ${user.email}`);
-      const { data: seededAdmin, error: seedErr } = await supabaseAdmin
+    // If not found by id, lookup by email in admins table and link user.id
+    if (!adminRecord && user.email) {
+      const { data: emailRecord } = await supabaseAdmin
         .from('admins')
-        .upsert({
-          id: user.id,
-          email: user.email,
-          name: 'Super Admin',
-          role: 'super_admin'
-        })
-        .select()
-        .single();
-        
-      if (!seedErr && seededAdmin) {
-        adminRecord = seededAdmin;
-        adminErr = null;
-      } else {
-        console.error(`[verifyAdminAuth] Failed to auto-seed super admin for ${user.email}:`, seedErr);
+        .select('*')
+        .ilike('email', user.email.trim())
+        .maybeSingle();
+
+      if (emailRecord) {
+        // Link the auth user ID with the admin profile
+        const { data: updatedRecord, error: updateErr } = await supabaseAdmin
+          .from('admins')
+          .update({ id: user.id, updated_at: new Date().toISOString() })
+          .eq('email', emailRecord.email)
+          .select()
+          .single();
+
+        if (!updateErr && updatedRecord) {
+          adminRecord = updatedRecord;
+          adminErr = null;
+        } else {
+          adminRecord = emailRecord;
+          adminErr = null;
+        }
       }
     }
 

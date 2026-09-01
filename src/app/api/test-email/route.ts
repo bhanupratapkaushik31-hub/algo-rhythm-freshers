@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { verifyAdminAuth } from '@/lib/adminAuth';
 
 export async function POST(request: NextRequest) {
-  // Keep this endpoint development-only
-  if (process.env.NODE_ENV !== 'development') {
+  // Verify administrator permissions
+  const admin = await verifyAdminAuth(request, ['super_admin', 'admin']);
+  if (!admin && process.env.NODE_ENV === 'production') {
     return NextResponse.json({
       success: false,
       error: {
-        code: 'FORBIDDEN',
-        message: 'This endpoint is only available in the development environment.'
+        code: 'UNAUTHORIZED',
+        message: 'You must be an authenticated administrator to send test emails.'
       }
-    }, { status: 403 });
+    }, { status: 401 });
   }
 
   try {
