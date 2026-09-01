@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Confirm amount matches configured ticket price
-    const expectedPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+    const expectedPaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
     if (payment.amount !== expectedPaise) {
       console.error(`[Verify Payment] Amount mismatch. Expected ${expectedPaise}, got ${payment.amount}`);
       return NextResponse.json({

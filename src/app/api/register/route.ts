@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
             .order('created_at', { ascending: false });
 
           if (!existingPays || existingPays.length === 0) {
-            const feePaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+            const feePaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
             await supabaseAdmin
               .from('payments')
               .insert({
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
         .insert({
           registration_id: newReg.id,
           razorpay_order_id: `order_pending_${newReg.id.substring(0, 8)}`,
-          amount: Number(EVENT_CONFIG.registrationFeePaise) || 5000,
+          amount: Number(EVENT_CONFIG.registrationFeePaise) || 10000, // ₹100 in paise
           currency: 'INR',
           payment_status: 'PENDING'
         });

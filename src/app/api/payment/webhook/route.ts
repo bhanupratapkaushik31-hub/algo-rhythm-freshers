@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Verify amount
-      const expectedAmount = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+      const expectedAmount = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
       if (amount !== expectedAmount || currency !== 'INR') {
         console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}`);
         await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}.`);

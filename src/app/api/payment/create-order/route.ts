@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     // 2. Initialize Razorpay credentials
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 5000;
+    const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
     if (!isRazorpayConfigured) {
