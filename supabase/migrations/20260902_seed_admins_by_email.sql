@@ -7,17 +7,40 @@
 BEGIN;
 
 -- -------------------------------------------------------------------------
--- 1. Ensure public.admins table has proper structure and indexes
+-- 1. Create admins table if not exists or add missing columns to existing table
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.admins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'scanner', 'coordinator')),
+    role TEXT NOT NULL DEFAULT 'scanner',
     active BOOLEAN DEFAULT true NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure all columns exist on existing pre-created admins tables
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Administrator';
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'scanner';
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- Ensure unique constraint on email for ON CONFLICT support
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'admins_email_unique' AND conrelid = 'public.admins'::regclass
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'admins_email_key' AND conrelid = 'public.admins'::regclass
+    ) THEN
+        ALTER TABLE public.admins ADD CONSTRAINT admins_email_unique UNIQUE (email);
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_admins_email ON public.admins(email);
 CREATE INDEX IF NOT EXISTS idx_admins_role ON public.admins(role);
@@ -44,7 +67,6 @@ USING (true);
 
 -- -------------------------------------------------------------------------
 -- 3. SEED INITIAL SUPER ADMIN ACCOUNTS
--- You can add or change super admin / coordinator emails directly here:
 -- -------------------------------------------------------------------------
 INSERT INTO public.admins (email, name, role, active)
 VALUES 
