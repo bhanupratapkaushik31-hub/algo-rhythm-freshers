@@ -7,7 +7,7 @@
 BEGIN;
 
 -- -------------------------------------------------------------------------
--- 1. Create admins table if not exists or add missing columns to existing table
+-- 1. Create admins table if not exists or ensure proper columns & defaults
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.admins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,6 +26,9 @@ ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'scanner';
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- Ensure default UUID generation is enabled on id column
+ALTER TABLE public.admins ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
 -- Ensure unique constraint on email for ON CONFLICT support
 DO $$
@@ -67,15 +70,35 @@ USING (true);
 
 -- -------------------------------------------------------------------------
 -- 3. SEED INITIAL SUPER ADMIN ACCOUNTS
+-- Links with auth.users ID if account already exists, otherwise generates UUID
 -- -------------------------------------------------------------------------
-INSERT INTO public.admins (email, name, role, active)
+INSERT INTO public.admins (id, email, name, role, active)
 VALUES 
-    ('scailpu@gmail.com', 'Super Administrator', 'super_admin', true),
-    ('bhanupratapias2005@gmail.com', 'Super Administrator', 'super_admin', true)
+    (
+        COALESCE((SELECT id FROM auth.users WHERE email = 'scailpu@gmail.com' LIMIT 1), gen_random_uuid()), 
+        'scailpu@gmail.com', 
+        'Super Administrator', 
+        'super_admin', 
+        true
+    ),
+    (
+        COALESCE((SELECT id FROM auth.users WHERE email = 'bhanupratapias2005@gmail.com' LIMIT 1), gen_random_uuid()), 
+        'bhanupratapias2005@gmail.com', 
+        'Super Administrator', 
+        'super_admin', 
+        true
+    )
 ON CONFLICT (email) 
 DO UPDATE SET 
     role = EXCLUDED.role,
     active = EXCLUDED.active,
     updated_at = timezone('utc'::text, now());
+
+-- Automatically sync matching auth.users id if available
+UPDATE public.admins a
+SET id = u.id,
+    updated_at = timezone('utc'::text, now())
+FROM auth.users u
+WHERE a.email = u.email AND a.id != u.id;
 
 COMMIT;
