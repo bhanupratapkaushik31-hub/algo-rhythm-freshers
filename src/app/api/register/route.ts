@@ -35,6 +35,19 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parseResult.data;
+
+    // Validate registration number eligibility
+    const regError = EVENT_CONFIG.getRegNoValidationError(data.registration_number);
+    if (regError) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'INELIGIBLE_REGISTRATION',
+          message: regError
+        }
+      }, { status: 400 });
+    }
+
     if (!data.photo_path) {
       return NextResponse.json({
         success: false,
@@ -47,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Automatically determine academic year from registration number (125 -> 2nd Year, 126 -> 1st Year)
     const detectedYear = EVENT_CONFIG.getYearFromRegNo(data.registration_number);
-    const computedYear: string = detectedYear || data.year || '1st Year';
+    const computedYear: string = detectedYear || '1st Year';
 
     // 2. Server-side enforcement of modeling_talent logic
     // ALWAYS force null if modeling is No, regardless of what client sends.

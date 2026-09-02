@@ -182,7 +182,7 @@ export default function Home() {
             className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs sm:text-sm font-extrabold uppercase tracking-wider shadow-lg shadow-emerald-950/30 mb-14"
           >
             <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>DL will be provided to all Registered members of this event</span>
+            <span>DL will be provided to all Second Year Registered members of this event</span>
           </motion.div>
         </motion.div>
 

@@ -7,12 +7,15 @@ export const registerSchema = z.object({
     .min(1, "Please enter your registration number.")
     .trim()
     .toUpperCase()
-    .refine(
-      (val) => val.startsWith('125') || val.startsWith('126'),
-      {
-        message: "Registration number must start with 125 (2nd Year) or 126 (1st Year)."
+    .superRefine((val, ctx) => {
+      const err = EVENT_CONFIG.getRegNoValidationError(val);
+      if (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err,
+        });
       }
-    ),
+    }),
   full_name: z
     .string()
     .trim()

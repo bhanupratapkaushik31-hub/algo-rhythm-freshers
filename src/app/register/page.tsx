@@ -177,14 +177,26 @@ export default function Register() {
 
   // Watch the modeling field to conditionally show/hide the talent field
   const modelingValue = watch('modeling');
-  // Watch the registration number to automatically detect year and fee (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
+  // Watch the registration number to automatically detect year, fee, and validate eligibility
   const regNumberValue = watch('registration_number') || '';
   const detectedYear = EVENT_CONFIG.getYearFromRegNo(regNumberValue);
   const selectedYearFee = EVENT_CONFIG.getFeeForYear(regNumberValue).inr;
+  
+  // Real-time validation message for registration number eligibility
+  const regNoValidationError = regNumberValue.trim().length >= 3 
+    ? EVENT_CONFIG.getRegNoValidationError(regNumberValue) 
+    : null;
+  const isRegNoBlocked = !!regNoValidationError;
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
     console.log('[Register Flow] 1. Checkout button clicked, form data:', data);
+
+    const validationError = EVENT_CONFIG.getRegNoValidationError(data.registration_number);
+    if (validationError) {
+      setServerError(validationError);
+      return;
+    }
     
     if (!photoBase64) {
       console.warn('[Register Flow] Photo base64 is missing');
@@ -362,13 +374,22 @@ export default function Register() {
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="e.g. 122XXXXX"
-                      className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 transition-colors uppercase outline-none"
+                      placeholder="e.g. 126XXXXX"
+                      className={`w-full bg-black/30 border ${
+                        regNoValidationError || errors.registration_number
+                          ? 'border-red-500/60 focus:border-red-500 focus:ring-1 focus:ring-red-500'
+                          : 'border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+                      } rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 transition-colors uppercase outline-none`}
                       {...register('registration_number')}
                     />
                   </div>
-                  {errors.registration_number && (
-                    <p className="text-[10px] text-red-400 font-semibold">{errors.registration_number.message}</p>
+                  {(errors.registration_number?.message || regNoValidationError) && (
+                    <div className="p-2.5 bg-red-950/40 border border-red-500/30 rounded-lg text-red-300 text-xs flex gap-2 items-start mt-1">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                      <span className="font-semibold leading-tight">
+                        {errors.registration_number?.message || regNoValidationError}
+                      </span>
+                    </div>
                   )}
                 </div>
 
@@ -617,21 +638,30 @@ export default function Register() {
                   <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || isRegNoBlocked || !detectedYear}
                     onClick={() => {
                       console.log('[Register Flow] Proceed to Checkout button clicked');
                     }}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 disabled:from-purple-800/50 disabled:to-pink-800/50 text-white font-bold rounded-xl shadow-lg shadow-purple-500/10 hover:shadow-purple-500/25 transition-all outline-none text-xs uppercase tracking-wider cursor-pointer"
+                    className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 font-bold rounded-xl shadow-lg transition-all outline-none text-xs uppercase tracking-wider ${
+                      submitting || isRegNoBlocked || !detectedYear
+                        ? 'bg-slate-800/80 border border-slate-700/60 text-slate-500 cursor-not-allowed shadow-none'
+                        : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-purple-500/10 hover:shadow-purple-500/25 cursor-pointer'
+                    }`}
                   >
                     {submitting ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Creating Registration...
                       </>
+                    ) : isRegNoBlocked ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        Registration Not Allowed
+                      </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        {detectedYear ? `Proceed to Checkout — ₹${selectedYearFee}` : 'Proceed to Checkout'}
+                        {detectedYear ? `Proceed to Checkout — ₹${selectedYearFee}` : 'Enter Valid Reg No.'}
                       </>
                     )}
                   </button>

@@ -30,6 +30,48 @@ export const EVENT_CONFIG = {
   },
 
   /**
+   * Validate registration number eligibility:
+   * Returns error message or null if valid.
+   * - Starts with 127 or more: "wrong registration number , contact organizing team"
+   * - Less than 125: "Only 1st year and second year is allowed in this freshers"
+   */
+  getRegNoValidationError: (regNo?: string | null): string | null => {
+    if (!regNo) return "Please enter your registration number.";
+    const clean = regNo.trim();
+    if (!clean) return "Please enter your registration number.";
+    
+    // Check first 3 digits
+    const prefix = clean.slice(0, 3);
+    const prefixNum = parseInt(prefix, 10);
+
+    if (clean.startsWith('125') || clean.startsWith('126')) {
+      return null; // Valid!
+    }
+
+    if (!isNaN(prefixNum) && prefix.length === 3) {
+      if (prefixNum >= 127) {
+        return "wrong registration number , contact organizing team";
+      }
+      if (prefixNum < 125) {
+        return "Only 1st year and second year is allowed in this freshers";
+      }
+    }
+
+    // Fallback if not pure numbers or under 3 characters
+    if (clean.startsWith('12')) {
+      const thirdChar = clean[2];
+      if (thirdChar && thirdChar >= '7') {
+        return "wrong registration number , contact organizing team";
+      }
+      if (thirdChar && thirdChar < '5') {
+        return "Only 1st year and second year is allowed in this freshers";
+      }
+    }
+
+    return "Only 1st year and second year is allowed in this freshers";
+  },
+
+  /**
    * Get registration fee by Year or Registration Number
    */
   getFeeForYear: (yearOrRegNo?: string | null) => {
