@@ -1,19 +1,24 @@
 import { z } from 'zod';
+import { EVENT_CONFIG } from '@/config/event';
 
 export const registerSchema = z.object({
   registration_number: z
     .string()
     .min(1, "Please enter your registration number.")
     .trim()
-    .toUpperCase(),
+    .toUpperCase()
+    .refine(
+      (val) => val.startsWith('125') || val.startsWith('126'),
+      {
+        message: "Registration number must start with 125 (2nd Year) or 126 (1st Year)."
+      }
+    ),
   full_name: z
     .string()
     .trim()
     .min(1, "Please enter your full name.")
     .max(100, "Name must be less than 100 characters."),
-  year: z.enum(['1st Year', '2nd Year'], {
-    errorMap: () => ({ message: "Please select your year." }),
-  }),
+  year: z.enum(['1st Year', '2nd Year']).optional(),
   school_name: z
     .string()
     .trim()

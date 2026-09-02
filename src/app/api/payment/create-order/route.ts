@@ -59,10 +59,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Initialize Razorpay credentials & calculate year-based fee
+    // 2. Initialize Razorpay credentials & calculate year-based fee (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    const amountInPaise = EVENT_CONFIG.getFeeForYear(reg.year).paise; // ₹100 (1st Year) or ₹200 (2nd Year) in paise
+    const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
+    const amountInPaise = EVENT_CONFIG.getFeeForYear(resolvedYear).paise; // ₹100 (1st Year) or ₹200 (2nd Year) in paise
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
     if (!isRazorpayConfigured) {

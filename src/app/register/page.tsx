@@ -177,9 +177,10 @@ export default function Register() {
 
   // Watch the modeling field to conditionally show/hide the talent field
   const modelingValue = watch('modeling');
-  // Watch the year field to dynamically display the tiered fee (₹100 for 1st Year, ₹200 for 2nd Year)
-  const yearValue = watch('year');
-  const selectedYearFee = EVENT_CONFIG.getFeeForYear(yearValue).inr;
+  // Watch the registration number to automatically detect year and fee (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
+  const regNumberValue = watch('registration_number') || '';
+  const detectedYear = EVENT_CONFIG.getYearFromRegNo(regNumberValue);
+  const selectedYearFee = EVENT_CONFIG.getFeeForYear(regNumberValue).inr;
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
@@ -227,6 +228,7 @@ export default function Register() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
+          year: detectedYear || data.year || '1st Year',
           photo_path: photoPath
         }),
       });
@@ -386,29 +388,34 @@ export default function Register() {
                   )}
                 </div>
 
-                {/* 3. Year */}
+                {/* 3. Automatic Year & Fee Detection */}
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Year *</label>
-                    {yearValue && (
-                      <span className="text-[11px] font-bold text-purple-300 bg-purple-950/40 border border-purple-500/20 px-2 py-0.5 rounded-full">
-                        Fee: ₹{selectedYearFee}
+                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Academic Year</label>
+                  <div className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 flex justify-between items-center text-sm">
+                    {detectedYear ? (
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{detectedYear}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          (Auto-detected from Reg No.)
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 text-xs italic">
+                        Enter Reg No. starting with 125 or 126
                       </span>
                     )}
+
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                      detectedYear 
+                        ? 'text-purple-300 bg-purple-950/40 border-purple-500/30' 
+                        : 'text-slate-500 bg-white/5 border-white/5'
+                    }`}>
+                      {detectedYear ? `₹${selectedYearFee}` : '₹100 / ₹200'}
+                    </span>
                   </div>
-                  <select
-                    className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-4 py-3 text-sm text-slate-300 transition-colors outline-none cursor-pointer appearance-none"
-                    {...register('year')}
-                  >
-                    <option value="" className="bg-[#0f0a24] text-slate-400">Select Year</option>
-                    <option value="1st Year" className="bg-[#0f0a24] text-white">1st Year — ₹100</option>
-                    <option value="2nd Year" className="bg-[#0f0a24] text-white">2nd Year — ₹200</option>
-                  </select>
-                  {errors.year ? (
-                    <p className="text-[10px] text-red-400 font-semibold">{errors.year.message}</p>
-                  ) : (
-                    <p className="text-[10px] text-slate-500">1st Year: ₹100 • 2nd Year: ₹200</p>
-                  )}
+                  <p className="text-[10px] text-slate-500">
+                    Reg No. starting with <strong className="text-slate-400">125</strong> = 2nd Year (₹200) • <strong className="text-slate-400">126</strong> = 1st Year (₹100)
+                  </p>
                 </div>
 
                 {/* 4. Modeling Enrollment */}
@@ -624,7 +631,7 @@ export default function Register() {
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        {yearValue ? `Proceed to Checkout — ₹${selectedYearFee}` : 'Proceed to Checkout'}
+                        {detectedYear ? `Proceed to Checkout — ₹${selectedYearFee}` : 'Proceed to Checkout'}
                       </>
                     )}
                   </button>

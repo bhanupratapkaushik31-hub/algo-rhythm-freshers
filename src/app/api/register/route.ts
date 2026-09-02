@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Automatically determine academic year from registration number (125 -> 2nd Year, 126 -> 1st Year)
+    const detectedYear = EVENT_CONFIG.getYearFromRegNo(data.registration_number);
+    const computedYear: string = detectedYear || data.year || '1st Year';
+
     // 2. Server-side enforcement of modeling_talent logic
     // ALWAYS force null if modeling is No, regardless of what client sends.
     // If modeling is Yes but talent is blank/missing, reject.
@@ -117,7 +121,7 @@ export async function POST(request: NextRequest) {
           .from('registrations')
           .update({
             full_name: data.full_name,
-            year: data.year,
+            year: computedYear,
             school_name: data.school_name,
             modeling: data.modeling,
             modeling_talent: modeling_talent,
@@ -188,7 +192,7 @@ export async function POST(request: NextRequest) {
       .insert({
         registration_number: data.registration_number,
         full_name: data.full_name,
-        year: data.year,
+        year: computedYear,
         school_name: data.school_name,
         modeling: data.modeling,
         modeling_talent: modeling_talent,

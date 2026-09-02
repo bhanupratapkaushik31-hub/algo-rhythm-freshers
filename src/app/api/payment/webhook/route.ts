@@ -138,11 +138,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: { message: 'Registration not found. Refund initiated.' } }, { status: 400 });
       }
 
-      // Verify amount matches the rate for the student's academic year
-      const expectedAmount = EVENT_CONFIG.getFeeForYear(reg.year).paise; // ₹100 or ₹200
+      // Verify amount matches the rate for the student's academic year (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
+      const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
+      const expectedAmount = EVENT_CONFIG.getFeeForYear(resolvedYear).paise; // ₹100 or ₹200
       if (amount !== expectedAmount || currency !== 'INR') {
-        console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR for ${reg.year}, got ${amount} ${currency}`);
-        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR for ${reg.year}, got ${amount} ${currency}.`);
+        console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR for ${resolvedYear}, got ${amount} ${currency}`);
+        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR for ${resolvedYear}, got ${amount} ${currency}.`);
         return NextResponse.json({ success: false, error: { message: 'Amount/currency mismatch. Refund initiated.' } }, { status: 400 });
       }
 
