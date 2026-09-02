@@ -17,7 +17,8 @@ import {
   PlusCircle, 
   Phone,
   ArrowRight,
-  ChevronDown
+  ChevronDown,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EVENT_CONFIG } from '@/config/event';
@@ -149,14 +150,14 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8"
           >
             {isRegOpen ? (
               <Link 
                 href="/register" 
                 className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-0.5 transition-all duration-200 text-sm tracking-wider uppercase"
               >
-                Register Now — From ₹100
+                Register Now
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
             ) : (
@@ -171,6 +172,17 @@ export default function Home() {
             >
               Explore Event
             </button>
+          </motion.div>
+
+          {/* Duty Leaves Highlighted Notice */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.5 }}
+            className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs sm:text-sm font-extrabold uppercase tracking-wider shadow-lg shadow-emerald-950/30 mb-14"
+          >
+            <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Duty Leaves will be provided if you have classes</span>
           </motion.div>
         </motion.div>
 
