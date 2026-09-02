@@ -175,7 +175,7 @@ export default function AdminSettings() {
 
               <div className="space-y-1">
                 <span className="text-[10px] text-slate-500 uppercase font-bold">Registration Entry Fee</span>
-                <p className="font-extrabold text-amber-500 text-gradient-gold">₹{EVENT_CONFIG.registrationFee}.00</p>
+                <p className="font-extrabold text-amber-500 text-gradient-gold">₹100 (1st Year) / ₹200 (2nd Year)</p>
               </div>
 
               <div className="space-y-1">

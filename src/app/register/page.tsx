@@ -177,6 +177,9 @@ export default function Register() {
 
   // Watch the modeling field to conditionally show/hide the talent field
   const modelingValue = watch('modeling');
+  // Watch the year field to dynamically display the tiered fee (₹100 for 1st Year, ₹200 for 2nd Year)
+  const yearValue = watch('year');
+  const selectedYearFee = EVENT_CONFIG.getFeeForYear(yearValue).inr;
 
   // 3. Handle Form Submission
   const onSubmit = async (data: RegisterInput) => {
@@ -385,17 +388,26 @@ export default function Register() {
 
                 {/* 3. Year */}
                 <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Year *</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Year *</label>
+                    {yearValue && (
+                      <span className="text-[11px] font-bold text-purple-300 bg-purple-950/40 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                        Fee: ₹{selectedYearFee}
+                      </span>
+                    )}
+                  </div>
                   <select
                     className="w-full bg-black/30 border border-white/10 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-4 py-3 text-sm text-slate-300 transition-colors outline-none cursor-pointer appearance-none"
                     {...register('year')}
                   >
                     <option value="" className="bg-[#0f0a24] text-slate-400">Select Year</option>
-                    <option value="1st Year" className="bg-[#0f0a24] text-white">1st Year</option>
-                    <option value="2nd Year" className="bg-[#0f0a24] text-white">2nd Year</option>
+                    <option value="1st Year" className="bg-[#0f0a24] text-white">1st Year — ₹100</option>
+                    <option value="2nd Year" className="bg-[#0f0a24] text-white">2nd Year — ₹200</option>
                   </select>
-                  {errors.year && (
+                  {errors.year ? (
                     <p className="text-[10px] text-red-400 font-semibold">{errors.year.message}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-500">1st Year: ₹100 • 2nd Year: ₹200</p>
                   )}
                 </div>
 
@@ -612,7 +624,7 @@ export default function Register() {
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        Proceed to Checkout
+                        {yearValue ? `Proceed to Checkout — ₹${selectedYearFee}` : 'Proceed to Checkout'}
                       </>
                     )}
                   </button>

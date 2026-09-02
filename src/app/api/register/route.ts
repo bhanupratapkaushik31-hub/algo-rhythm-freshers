@@ -141,16 +141,16 @@ export async function POST(request: NextRequest) {
           }, { status: 500 });
         }
 
-        // Ensure payment record exists safely without duplicate creation
+        // Ensure payment record exists safely without duplicate creation, matching the student's year fee
         try {
+          const feePaise = EVENT_CONFIG.getFeeForYear(updatedReg.year).paise;
           const { data: existingPays } = await supabaseAdmin
             .from('payments')
-            .select('id')
+            .select('id, amount, payment_status')
             .eq('registration_id', updatedReg.id)
             .order('created_at', { ascending: false });
 
           if (!existingPays || existingPays.length === 0) {
-            const feePaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
             await supabaseAdmin
               .from('payments')
               .insert({
@@ -160,6 +160,15 @@ export async function POST(request: NextRequest) {
                 currency: 'INR',
                 payment_status: 'PENDING'
               });
+          } else if (existingPays[0].payment_status === 'PENDING' && existingPays[0].amount !== feePaise) {
+            // Update amount if year changed while still pending
+            await supabaseAdmin
+              .from('payments')
+              .update({
+                amount: feePaise,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingPays[0].id);
           }
         } catch (payErr) {
           console.error('Error ensuring payment record for updated registration:', payErr);
@@ -213,14 +222,15 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Initialize payment record as PENDING
+    // Initialize payment record as PENDING with fee matching student's year
     try {
+      const initialFeePaise = EVENT_CONFIG.getFeeForYear(newReg.year).paise;
       await supabaseAdmin
         .from('payments')
         .insert({
           registration_id: newReg.id,
           razorpay_order_id: `order_pending_${newReg.id.substring(0, 8)}`,
-          amount: Number(EVENT_CONFIG.registrationFeePaise) || 10000, // ₹100 in paise
+          amount: initialFeePaise,
           currency: 'INR',
           payment_status: 'PENDING'
         });

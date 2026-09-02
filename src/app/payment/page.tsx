@@ -407,13 +407,19 @@ function PaymentContent() {
                   <p className="text-xs text-slate-300 font-semibold truncate">{paymentData.student.email}</p>
                 </div>
               </div>
+              {paymentData.student?.year && (
+                <div className="border-t border-white/5 pt-2 flex justify-between items-center">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Academic Year</span>
+                  <span className="text-xs font-bold text-purple-300 bg-purple-950/40 border border-purple-500/20 px-2 py-0.5 rounded-md">{paymentData.student.year}</span>
+                </div>
+              )}
             </div>
 
             {/* Price detail */}
             <div className="space-y-4 mb-8">
               <div className="flex justify-between items-center text-xs text-slate-400">
-                <span>Fresher Party Entry Ticket</span>
-                <span className="font-semibold text-white">₹{EVENT_CONFIG.registrationFee}.00</span>
+                <span>Fresher Party Entry Ticket {paymentData.student?.year ? `(${paymentData.student.year})` : ''}</span>
+                <span className="font-semibold text-white">₹{Math.round(paymentData.amount / 100)}.00</span>
               </div>
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>Gateway Service Charges</span>
@@ -421,7 +427,7 @@ function PaymentContent() {
               </div>
               <div className="pt-4 border-t border-white/5 flex justify-between items-center">
                 <span className="text-sm font-bold text-white">Total Amount</span>
-                <span className="text-xl font-bold font-outfit text-purple-300">₹{EVENT_CONFIG.registrationFee}.00</span>
+                <span className="text-xl font-bold font-outfit text-purple-300">₹{Math.round(paymentData.amount / 100)}.00</span>
               </div>
             </div>
 
@@ -465,7 +471,7 @@ function PaymentContent() {
               ) : (
                 <>
                   <CreditCard className="w-4 h-4" />
-                  PAY ₹{EVENT_CONFIG.registrationFee} ONLINE
+                  PAY ₹{Math.round(paymentData.amount / 100)} ONLINE
                 </>
               )}
             </button>

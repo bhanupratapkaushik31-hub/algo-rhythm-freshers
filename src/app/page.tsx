@@ -156,7 +156,7 @@ export default function Home() {
                 href="/register" 
                 className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-0.5 transition-all duration-200 text-sm tracking-wider uppercase"
               >
-                Register Now — ₹{EVENT_CONFIG.registrationFee}
+                Register Now — From ₹100
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
             ) : (
@@ -236,18 +236,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Event Information Section */}
-      <section id="explore-section" className="py-24 px-4 max-w-6xl mx-auto w-full">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-4 font-outfit">Event Details</h2>
-          <div className="w-16 h-1 bg-gradient-to-r from-purple-500 to-pink-500 mx-auto rounded-full" />
-        </div>
-
+      {/* Quick Info Grid Section */}
+      <section id="explore-section" className="py-12 px-4 max-w-6xl mx-auto w-full">
         <motion.div
           variants={containerVariants}
           initial="hidden"
           whileInView="show"
-          viewport={{ once: true, margin: "-100px" }}
+          viewport={{ once: true, margin: "-50px" }}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
         >
           {/* Card 1: Date */}
@@ -286,8 +281,8 @@ export default function Home() {
               <CreditCard className="w-8 h-8" />
             </div>
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Entry Fee</h3>
-            <p className="text-lg font-bold font-outfit text-amber-500 text-gradient-gold">₹{EVENT_CONFIG.registrationFee}</p>
-            <span className="text-[10px] text-amber-500/80 font-medium tracking-wide uppercase mt-1">Registration Mandatory</span>
+            <p className="text-lg font-bold font-outfit text-amber-500 text-gradient-gold">₹100 / ₹200</p>
+            <span className="text-[10px] text-amber-500/80 font-medium tracking-wide uppercase mt-1">1st Year: ₹100 • 2nd Year: ₹200</span>
           </motion.div>
         </motion.div>
       </section>

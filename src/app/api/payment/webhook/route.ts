@@ -125,11 +125,24 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, message: 'Refund initiated (no local record)' });
       }
 
-      // Verify amount
-      const expectedAmount = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
+      // Fetch associated registration to check expected fee for the student's year
+      const { data: reg, error: fetchRegErr } = await supabaseAdmin
+        .from('registrations')
+        .select('registration_status, email_sent, ticket_token, full_name, registration_number, email, year')
+        .eq('id', payment.registration_id)
+        .maybeSingle();
+
+      if (fetchRegErr || !reg) {
+        console.error(`[Webhook Error] Associated registration ${payment.registration_id} not found. Refunding.`);
+        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, 'Associated student registration not found.');
+        return NextResponse.json({ success: false, error: { message: 'Registration not found. Refund initiated.' } }, { status: 400 });
+      }
+
+      // Verify amount matches the rate for the student's academic year
+      const expectedAmount = EVENT_CONFIG.getFeeForYear(reg.year).paise; // ₹100 or ₹200
       if (amount !== expectedAmount || currency !== 'INR') {
-        console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}`);
-        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR, got ${amount} ${currency}.`);
+        console.error(`[Webhook Error] Amount or currency mismatch. Expected ${expectedAmount} INR for ${reg.year}, got ${amount} ${currency}`);
+        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, `Amount mismatch. Expected ${expectedAmount} INR for ${reg.year}, got ${amount} ${currency}.`);
         return NextResponse.json({ success: false, error: { message: 'Amount/currency mismatch. Refund initiated.' } }, { status: 400 });
       }
 
@@ -154,18 +167,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fetch current registration status to double check email and paid status
-      const { data: reg, error: fetchRegErr } = await supabaseAdmin
-        .from('registrations')
-        .select('registration_status, email_sent, ticket_token, full_name, registration_number, email')
-        .eq('id', payment.registration_id)
-        .maybeSingle();
+      // Registration is already fetched above and validated.
 
-      if (fetchRegErr || !reg) {
-        console.error(`[Webhook Error] Associated registration ${payment.registration_id} not found. Refunding.`);
-        await initiateAutoRefund(razorpayPaymentId, payment.registration_id, 'Associated registration record not found.');
-        return NextResponse.json({ success: true, message: 'Refund initiated (no registration record)' });
-      }
 
       const isAlreadyPaid = reg.registration_status === 'PAID';
       const isEmailSent = reg.email_sent;

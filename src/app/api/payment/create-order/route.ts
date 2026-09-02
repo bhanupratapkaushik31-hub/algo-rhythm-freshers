@@ -59,11 +59,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Initialize Razorpay credentials & strict mode
-    // 2. Initialize Razorpay credentials
+    // 2. Initialize Razorpay credentials & calculate year-based fee
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    const amountInPaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
+    const amountInPaise = EVENT_CONFIG.getFeeForYear(reg.year).paise; // ₹100 (1st Year) or ₹200 (2nd Year) in paise
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
     if (!isRazorpayConfigured) {
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
     // 3. Check for existing payment record & order reuse (Duplicate order prevention)
     const { data: existingPayments, error: fetchPayError } = await supabaseAdmin
       .from('payments')
-      .select('id, razorpay_order_id, payment_status, created_at, updated_at')
+      .select('id, razorpay_order_id, amount, payment_status, created_at, updated_at')
       .eq('registration_id', reg.id)
       .order('created_at', { ascending: false });
 
@@ -91,7 +90,7 @@ export async function POST(request: NextRequest) {
     let orderId = '';
     const latestPayment = existingPayments && existingPayments.length > 0 ? existingPayments[0] : null;
 
-    // Check if we can safely reuse a recent genuine Razorpay order (created within last 15 minutes).
+    // Check if we can safely reuse a recent genuine Razorpay order (created within last 15 minutes with matching amount).
     // IMPORTANT: The register route pre-populates a fake placeholder like `order_pending_xxx`.
     // These must NEVER be passed to Razorpay checkout — they don't exist as real orders.
     if (latestPayment && latestPayment.payment_status === 'PENDING' && latestPayment.razorpay_order_id) {
@@ -99,7 +98,6 @@ export async function POST(request: NextRequest) {
       const ageMinutes = (Date.now() - orderCreatedAt) / (1000 * 60);
 
       // A genuine Razorpay order ID starts with 'order_' but is NOT a local placeholder.
-      // Must exclude: order_pending_*, order_sim_*, order_mock_*, any 'sim' substring.
       const ordId = latestPayment.razorpay_order_id;
       const isRealRazorpayOrder =
         ordId.startsWith('order_') &&
@@ -108,9 +106,13 @@ export async function POST(request: NextRequest) {
         !ordId.startsWith('order_mock_') &&
         !ordId.includes('sim');
 
-      if (isRealRazorpayOrder && ageMinutes < 15) {
+      const isAmountMatching = Number(latestPayment.amount) === amountInPaise;
+
+      if (isRealRazorpayOrder && isAmountMatching && ageMinutes < 15) {
         orderId = ordId;
-        console.log(`[Create Order] Reusing genuine Razorpay order: ${orderId} for registration: ${reg.id}`);
+        console.log(`[Create Order] Reusing genuine Razorpay order: ${orderId} for registration: ${reg.id} (amount: ${amountInPaise})`);
+      } else if (!isAmountMatching) {
+        console.log(`[Create Order] Order amount changed (${latestPayment.amount} -> ${amountInPaise}) — will create a fresh order.`);
       } else if (!isRealRazorpayOrder) {
         console.log(`[Create Order] Skipping placeholder/fake order ID "${ordId}" — will create a fresh real order.`);
       } else {

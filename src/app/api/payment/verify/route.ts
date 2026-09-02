@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // 3. Confirm the order ID belongs to the correct registration
+    // 3. Confirm the order ID belongs to the correct registration and fetch student details
     if (payment.registration_id !== registration_id) {
       console.error(`[Verify Payment] Registration ID mismatch. Expected ${payment.registration_id}, got ${registration_id}`);
       return NextResponse.json({
@@ -106,15 +106,33 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 4. Confirm amount matches configured ticket price
-    const expectedPaise = Number(EVENT_CONFIG.registrationFeePaise) || 10000; // ₹100 in paise
-    if (payment.amount !== expectedPaise) {
-      console.error(`[Verify Payment] Amount mismatch. Expected ${expectedPaise}, got ${payment.amount}`);
+    // Fetch student's registered year to calculate exact expected fee
+    const { data: studentReg, error: regFetchError } = await supabaseAdmin
+      .from('registrations')
+      .select('id, year, ticket_token, email')
+      .eq('id', registration_id)
+      .maybeSingle();
+
+    if (regFetchError || !studentReg) {
+      console.error('[Verify Payment] Registration record not found for verification:', regFetchError);
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'REGISTRATION_NOT_FOUND',
+          message: 'Student registration record not found.'
+        }
+      }, { status: 404 });
+    }
+
+    // 4. Confirm amount matches configured ticket price for the student's academic year
+    const expectedPaise = EVENT_CONFIG.getFeeForYear(studentReg.year).paise; // ₹100 for 1st Year, ₹200 for 2nd Year
+    if (Number(payment.amount) !== expectedPaise) {
+      console.error(`[Verify Payment] Amount mismatch. Expected ${expectedPaise} for ${studentReg.year}, got ${payment.amount}`);
       return NextResponse.json({
         success: false,
         error: {
           code: 'AMOUNT_MISMATCH',
-          message: 'Invalid payment amount detected.'
+          message: 'Invalid payment amount detected for your academic year.'
         }
       }, { status: 400 });
     }

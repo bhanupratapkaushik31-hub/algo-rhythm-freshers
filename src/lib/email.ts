@@ -86,6 +86,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
       .maybeSingle();
 
     const paymentMethodDisplay = payment?.payment_method && payment.payment_method !== 'TEST_SIMULATOR' ? payment.payment_method.toUpperCase() : 'RAZORPAY';
+    const paidAmount = payment?.amount ? Math.round(payment.amount / 100) : EVENT_CONFIG.getFeeForYear(reg.year).inr;
 
     // 3. Prepare ticket verification link
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -248,7 +249,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
               </div>
               <div class="detail-row">
                 <span class="label">Amount:</span>
-                <span class="value">₹${EVENT_CONFIG.registrationFee}</span>
+                <span class="value">₹${paidAmount}</span>
               </div>
               <div class="detail-row">
                 <span class="label">Payment Status:</span>
