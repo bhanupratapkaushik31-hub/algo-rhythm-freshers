@@ -336,10 +336,10 @@ export default function AdminDashboard() {
                 <div>
                   <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Payment after Deductions</span>
                   <h3 className="text-3xl font-extrabold font-outfit text-emerald-400 mt-1.5">
-                    ₹{(stats.payment_after_deductions ?? Number((stats.total_collection * 0.974).toFixed(2))).toLocaleString('en-IN')}
+                    ₹{(stats.payment_after_deductions ?? Number((stats.total_collection * 0.975).toFixed(2))).toLocaleString('en-IN')}
                   </h3>
                   <span className="text-[10px] text-slate-400 block mt-1">
-                    Net payout (-2.6% fee: ₹{(stats.deductions_amount ?? Number((stats.total_collection * 0.026).toFixed(2))).toLocaleString('en-IN')})
+                    Net payout (-2.5% fee: ₹{(stats.deductions_amount ?? Number((stats.total_collection * 0.025).toFixed(2))).toLocaleString('en-IN')})
                   </span>
                 </div>
                 <div className="p-4 rounded-xl bg-emerald-500/10 text-emerald-400">
