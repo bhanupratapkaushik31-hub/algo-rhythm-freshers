@@ -15,7 +15,8 @@ import {
   ShieldAlert, 
   Menu, 
   X,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -158,6 +159,12 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
       name: 'Coordinators',
       href: '/admin/coordinators',
       icon: Users,
+      roles: ['super_admin', 'admin'],
+    },
+    {
+      name: 'Deleted Data',
+      href: '/admin/deleted',
+      icon: Trash2,
       roles: ['super_admin', 'admin'],
     },
     {

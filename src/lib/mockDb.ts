@@ -123,6 +123,22 @@ export function mockUpdateRegistration(id: string, updates: any) {
   return db.registrations[index];
 }
 
+export function mockSoftDeleteRegistration(id: string) {
+  return mockUpdateRegistration(id, {
+    deleted_at: new Date().toISOString(),
+    is_deleted: true,
+    registration_status: 'CANCELLED'
+  });
+}
+
+export function mockRestoreRegistration(id: string) {
+  return mockUpdateRegistration(id, {
+    deleted_at: null,
+    is_deleted: false,
+    registration_status: 'PAID'
+  });
+}
+
 // 5. Payment helpers
 export function mockGetPaymentByOrderId(orderId: string) {
   const db = readMockDb();
@@ -179,20 +195,25 @@ export function mockCreateEntry(data: any) {
 export function mockGetStats() {
   const db = readMockDb();
   
-  const totalReg = db.registrations.length;
-  const paidReg = db.registrations.filter(r => r.registration_status === 'PAID').length;
-  const pendingReg = db.registrations.filter(r => r.registration_status === 'PENDING').length;
+  const activeRegs = db.registrations.filter(r => !r.is_deleted && !r.deleted_at && r.registration_status !== 'CANCELLED');
+  const totalReg = activeRegs.length;
+  const paidRegs = activeRegs.filter(r => r.registration_status === 'PAID');
+  const paidCount = paidRegs.length;
+  const pendingReg = activeRegs.filter(r => r.registration_status === 'PENDING').length;
   
-  const successfulPayments = db.payments.filter(p => p.payment_status === 'SUCCESS');
-  const totalCollection = successfulPayments.reduce((sum, p) => sum + (p.amount / 100), 0);
+  // Sum payments for active paid registrations (1st Year: ₹100, 2nd Year: ₹200)
+  const totalCollection = paidRegs.reduce((sum, r) => {
+    const fee = r.year === '2nd Year' ? 200 : 100;
+    return sum + fee;
+  }, 0);
   
   const entriesCompleted = db.entries.length;
-  const notYetEntered = Math.max(0, paidReg - entriesCompleted);
-  const modelingRegistrations = db.registrations.filter(r => r.registration_status === 'PAID' && r.modeling === 'Yes').length;
+  const notYetEntered = Math.max(0, paidCount - entriesCompleted);
+  const modelingRegistrations = paidRegs.filter(r => r.modeling === 'Yes').length;
 
   return {
     total_registrations: totalReg,
-    paid_registrations: paidReg,
+    paid_registrations: paidCount,
     pending_payments: pendingReg,
     total_collection: totalCollection,
     entries_completed: entriesCompleted,
@@ -204,6 +225,7 @@ export function mockGetStats() {
 // 8. Registrations Query Builder (with Search, Sorting, Filtering, and Pagination)
 export function mockListRegistrations(params: any) {
   const db = readMockDb();
+  const isDeletedView = params.deleted === 'true';
   
   // Pre-join registrations with entries and payments (mimic view registrations_with_details)
   let joinedList = db.registrations.map(r => {
@@ -221,6 +243,13 @@ export function mockListRegistrations(params: any) {
       refund_status: payment ? (payment.refund_status || 'NOT_REQUIRED') : 'NOT_REQUIRED'
     };
   });
+
+  // Filter soft-deleted
+  if (isDeletedView) {
+    joinedList = joinedList.filter(r => r.is_deleted || r.deleted_at || r.registration_status === 'CANCELLED');
+  } else {
+    joinedList = joinedList.filter(r => !r.is_deleted && !r.deleted_at && r.registration_status !== 'CANCELLED');
+  }
 
   const search = params.search || '';
   const page = params.page || 1;

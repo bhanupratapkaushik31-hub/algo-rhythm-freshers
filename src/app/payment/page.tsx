@@ -28,11 +28,12 @@ function PaymentContent() {
   );
   const [verifying, setVerifying] = useState(false);
   const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
+  const [cancellingSession, setCancellingSession] = useState(false);
   const [alreadyPaidToken, setAlreadyPaidToken] = useState<string | null>(null);
-
 
   const [paymentStatus, setPaymentStatus] = useState<string>('PENDING');
   const [checkingStatus, setCheckingStatus] = useState(true);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(900); // 15 minutes countdown
 
   // Helper to ensure Razorpay checkout script is loaded on-demand
   const ensureRazorpayLoaded = async (): Promise<boolean> => {
@@ -78,6 +79,20 @@ function PaymentContent() {
         resolve(ok);
       }, 5000);
     });
+  };
+
+  // Helper to notify server of cancellation
+  const cancelOrderOnServer = async (reason = 'USER_EXIT') => {
+    if (!registrationId) return;
+    try {
+      await fetch('/api/payment/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration_id: registrationId, reason })
+      });
+    } catch (e) {
+      console.warn('Payment cancellation request warning:', e);
+    }
   };
 
   // 1. Check payment status and initialize checkout on mount
@@ -135,6 +150,11 @@ function PaymentContent() {
               setLoading(false);
               return;
             }
+            if (status === 'CANCELLED') {
+              setCheckingStatus(false);
+              setLoading(false);
+              return;
+            }
             if (status === 'REFUND_PROCESSING' || status === 'REFUNDED') {
               setCheckingStatus(false);
               setLoading(false);
@@ -153,9 +173,27 @@ function PaymentContent() {
     checkStatusFirst();
   }, [registrationId]);
 
+  // 2. Countdown timer effect (15 minutes expiry)
+  useEffect(() => {
+    if (loading || checkingStatus || paymentStatus !== 'PENDING') return;
 
+    const timer = setInterval(() => {
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          // Expire and cancel order
+          setPaymentStatus('CANCELLED');
+          cancelOrderOnServer('SESSION_EXPIRED');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-  // 2. Trigger Razorpay Checkout Modal
+    return () => clearInterval(timer);
+  }, [loading, checkingStatus, paymentStatus, registrationId]);
+
+  // 3. Trigger Razorpay Checkout Modal
   const handlePayment = async () => {
     console.log('[Payment] Initiating Razorpay checkout...');
     if (isCheckoutOpening || verifying) return;
@@ -261,9 +299,20 @@ function PaymentContent() {
     }
   };
 
+  const handleExplicitCancel = async () => {
+    if (confirm('Are you sure you want to cancel this checkout session? Your pending registration will be cancelled.')) {
+      setCancellingSession(true);
+      await cancelOrderOnServer('USER_CANCELLED');
+      setPaymentStatus('CANCELLED');
+      setCancellingSession(false);
+    }
+  };
 
-  const handleCancelPayment = () => {
-    router.push('/register');
+  // Format mm:ss
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remainder = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -276,7 +325,7 @@ function PaymentContent() {
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
 
       {/* Back link */}
-      <div className="w-full max-w-md mb-6">
+      <div className="w-full max-w-md mb-6 flex items-center justify-between">
         <Link 
           href="/register" 
           className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors text-xs font-semibold uppercase tracking-wider"
@@ -284,6 +333,12 @@ function PaymentContent() {
           <ArrowLeft className="w-4 h-4" />
           Edit Details
         </Link>
+        {paymentStatus === 'PENDING' && !loading && !checkingStatus && (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[11px] font-mono font-medium">
+            <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+            Session: {formatTime(secondsRemaining)}
+          </div>
+        )}
       </div>
 
       <motion.div
@@ -310,6 +365,30 @@ function PaymentContent() {
             <p className="text-slate-400 text-xs max-w-xs">
               Confirming signature with Razorpay servers. Please do not refresh this page or press back.
             </p>
+          </div>
+        ) : paymentStatus === 'CANCELLED' ? (
+          <div className="py-8 text-center flex flex-col items-center justify-center">
+            <div className="p-3.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 mb-5 flex items-center justify-center w-12 h-12">
+              <AlertTriangle className="w-6 h-6 text-amber-400" />
+            </div>
+            <h2 className="text-lg font-bold text-white font-outfit mb-2">Payment Session Cancelled / Timed Out</h2>
+            <p className="text-slate-400 text-xs leading-relaxed mb-6">
+              This checkout session has expired or was cancelled. Your registration has been safely cancelled and will not remain pending.
+            </p>
+            <div className="flex flex-col gap-3 w-full">
+              <Link 
+                href="/register"
+                className="w-full inline-flex justify-center items-center px-6 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 font-bold text-xs uppercase tracking-wider rounded-xl text-white transition-all shadow-lg shadow-purple-500/10"
+              >
+                Start Fresh Registration
+              </Link>
+              <Link 
+                href="/"
+                className="w-full inline-flex justify-center items-center px-6 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 font-bold text-xs uppercase tracking-wider rounded-xl text-slate-300 transition-all"
+              >
+                Return Home
+              </Link>
+            </div>
           </div>
         ) : paymentStatus === 'REFUNDED' ? (
           <div className="py-8 text-center flex flex-col items-center justify-center">
@@ -387,8 +466,12 @@ function PaymentContent() {
           <div>
             {/* Header */}
             <div className="mb-6 pb-6 border-b border-white/5">
-              <h1 className="text-2xl font-extrabold text-white font-outfit tracking-tight">Checkout Summary</h1>
-              <p className="text-slate-400 text-xs mt-1">Review registration details before payment.</p>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-2xl font-extrabold text-white font-outfit tracking-tight">Checkout Summary</h1>
+                  <p className="text-slate-400 text-xs mt-1">Review registration details before payment.</p>
+                </div>
+              </div>
             </div>
 
             {/* Student metadata */}
@@ -443,38 +526,54 @@ function PaymentContent() {
             ) : (
               <div className="flex items-center gap-2 p-3 bg-purple-950/20 border border-purple-500/10 rounded-xl text-[10px] text-purple-300 mb-6 leading-relaxed">
                 <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
-                <span>Secured by Razorpay. If you completed payment but got disconnected, simply reload this page to retrieve your ticket.</span>
+                <span>Secured by Razorpay. Complete payment before the session expires.</span>
               </div>
             )}
 
-
             {/* Action buttons */}
-            <button
-              onClick={handlePayment}
-              disabled={!paymentData.razorpay_configured || isCheckoutOpening || verifying}
-              className={`w-full inline-flex justify-center items-center gap-2 px-8 py-3.5 font-bold rounded-xl shadow-lg text-xs uppercase tracking-wider text-white transition-all duration-200 ${
-                paymentData.razorpay_configured && !isCheckoutOpening && !verifying
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 cursor-pointer shadow-purple-500/10 hover:shadow-purple-500/25' 
-                  : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed shadow-none'
-              }`}
-            >
-              {isCheckoutOpening ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Opening Razorpay...
-                </>
-              ) : verifying ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Verifying Payment...
-                </>
-              ) : (
-                <>
-                  <CreditCard className="w-4 h-4" />
-                  PAY ₹{Math.round(paymentData.amount / 100)} ONLINE
-                </>
-              )}
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handlePayment}
+                disabled={!paymentData.razorpay_configured || isCheckoutOpening || verifying || cancellingSession}
+                className={`w-full inline-flex justify-center items-center gap-2 px-8 py-3.5 font-bold rounded-xl shadow-lg text-xs uppercase tracking-wider text-white transition-all duration-200 ${
+                  paymentData.razorpay_configured && !isCheckoutOpening && !verifying && !cancellingSession
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 cursor-pointer shadow-purple-500/10 hover:shadow-purple-500/25' 
+                    : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed shadow-none'
+                }`}
+              >
+                {isCheckoutOpening ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Opening Razorpay...
+                  </>
+                ) : verifying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying Payment...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4" />
+                    PAY ₹{Math.round(paymentData.amount / 100)} ONLINE
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleExplicitCancel}
+                disabled={cancellingSession || verifying || isCheckoutOpening}
+                className="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-red-500/10 hover:border-red-500/20 border border-white/10 text-slate-400 hover:text-red-400 text-xs font-semibold rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              >
+                {cancellingSession ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Cancelling Session...
+                  </>
+                ) : (
+                  'Cancel Payment & Exit'
+                )}
+              </button>
+            </div>
           </div>
         )}
       </motion.div>

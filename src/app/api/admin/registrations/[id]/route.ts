@@ -81,24 +81,48 @@ export async function GET(
   }
 }
 
-// DELETE (Soft-delete/Cancel) a registration
+// DELETE (Soft-delete or Permanent-purge) a registration
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const isPermanent = searchParams.get('permanent') === 'true';
 
-    // 1. Verify super-admin permissions (only super_admin can cancel registrations)
-    const admin = await verifyAdminAuth(request, ['super_admin']);
+    // 1. Verify admin permissions (Super Admin or Admin for soft-delete; Super Admin only for permanent purge)
+    const requiredRoles = isPermanent ? ['super_admin'] : ['super_admin', 'admin'];
+    const admin = await verifyAdminAuth(request, requiredRoles as any);
     if (!admin) {
       return NextResponse.json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Only Super Admins can cancel/delete registrations.' }
+        error: { code: 'UNAUTHORIZED', message: isPermanent ? 'Only Super Admins can permanently purge records.' : 'You are not authorized to delete registrations.' }
       }, { status: 403 });
     }
 
-    // 2. Perform soft-delete: update registration_status to CANCELLED
+    if (isPermanent) {
+      // Permanent cascade purge
+      await supabaseAdmin.from('entry_logs').delete().eq('registration_id', id);
+      await supabaseAdmin.from('entries').delete().eq('registration_id', id);
+      await supabaseAdmin.from('payments').delete().eq('registration_id', id);
+      const { error: delErr } = await supabaseAdmin.from('registrations').delete().eq('id', id);
+
+      if (delErr) {
+        console.error('Permanent purge error:', delErr);
+        return NextResponse.json({
+          success: false,
+          error: { code: 'DATABASE_ERROR', message: 'Failed to permanently delete record.' }
+        }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: { message: 'Registration record permanently purged from database.' }
+      });
+    }
+
+    // 2. Perform soft-delete by setting registration_status to CANCELLED
     const { data: reg, error } = await supabaseAdmin
       .from('registrations')
       .update({
@@ -113,7 +137,7 @@ export async function DELETE(
       console.error('Soft delete DB error:', error);
       return NextResponse.json({
         success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to cancel registration.' }
+        error: { code: 'DATABASE_ERROR', message: 'Failed to soft delete registration.' }
       }, { status: 500 });
     }
 
@@ -127,16 +151,17 @@ export async function DELETE(
     return NextResponse.json({
       success: true,
       data: {
-        message: 'Registration was cancelled successfully (soft-deleted).',
+        message: 'Registration was soft-deleted successfully and moved to Trash.',
         registration: reg
       }
     });
 
   } catch (err: any) {
-    console.error('Cancel registration API crashed:', err);
+    console.error('Delete registration API crashed:', err);
     return NextResponse.json({
       success: false,
       error: { code: 'INTERNAL_ERROR', message: err.message || 'Crashed' }
     }, { status: 500 });
   }
 }
+

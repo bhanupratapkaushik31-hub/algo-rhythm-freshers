@@ -318,9 +318,9 @@ export default function AdminRegistrations() {
     }
   };
 
-  // 3. Cancel/Delete Registration (Super Admin Only)
+  // 3. Cancel/Soft-Delete Registration
   const handleCancelRegistration = async (id: string) => {
-    if (!window.confirm("Are you absolutely sure you want to cancel/soft-delete this registration? Unused tickets will be invalidated. Payment record will NOT be deleted.")) {
+    if (!window.confirm("Move this registration to Trash (Soft Delete)? It will be removed from this list and excluded from dashboard statistics. You can recover/restore it anytime from the 'Deleted Data' page.")) {
       return;
     }
 
@@ -333,15 +333,15 @@ export default function AdminRegistrations() {
       const res = await response.json();
 
       if (response.ok && res.success) {
-        alert('Registration was successfully cancelled.');
+        alert('Registration was moved to Trash (soft-deleted).');
         setSelectedReg(null);
         fetchRegistrations();
       } else {
-        alert(res.error?.message || 'Failed to cancel registration.');
+        alert(res.error?.message || 'Failed to soft delete registration.');
       }
     } catch (err) {
       console.error(err);
-      alert('Network error. Failed to execute cancellation.');
+      alert('Network error. Failed to execute deletion.');
     } finally {
       setCancelling(false);
     }
@@ -357,13 +357,22 @@ export default function AdminRegistrations() {
           <p className="text-slate-400 text-xs mt-1">Manage student registrants, view payment logs, and check-in statuses.</p>
         </div>
         
-        <button
-          onClick={exportCSV}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/admin/deleted"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+            Trash ({'>'})
+          </Link>
+          <button
+            onClick={exportCSV}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {errorMsg && (

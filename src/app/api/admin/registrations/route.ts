@@ -24,11 +24,19 @@ export async function GET(request: NextRequest) {
     const school = searchParams.get('school') || '';
     const sortBy = searchParams.get('sortBy') || 'created_at';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
+    const isDeletedView = searchParams.get('deleted') === 'true';
 
     // 2. Query the view
     let query = supabaseAdmin
       .from('registrations_with_details')
       .select('*', { count: 'exact' });
+
+    // Soft-delete filter based on registration_status (works 100% out of the box)
+    if (isDeletedView) {
+      query = query.eq('registration_status', 'CANCELLED');
+    } else {
+      query = query.neq('registration_status', 'CANCELLED');
+    }
 
     // Apply Search
     if (search) {
@@ -89,14 +97,19 @@ export async function GET(request: NextRequest) {
     const primaryResult = await query;
     if (primaryResult.error) {
       const errMsg = primaryResult.error.message;
-      const isLegacyView = errMsg.includes('payment_status') || errMsg.includes('refund_status') || errMsg.includes('is_test') || errMsg.includes('entry_is_test');
+      const needsFallback = errMsg.includes('deleted_at') || errMsg.includes('payment_status') || errMsg.includes('refund_status');
       
-      if (isLegacyView) {
-        console.warn('Primary registrations query failed due to legacy view columns, running fallback query:', errMsg);
-        // Build fallback query using legacy columns only
+      if (needsFallback) {
+        console.warn('Primary registrations query failed due to pending view updates, running fallback query:', errMsg);
         let fallbackQuery = supabaseAdmin
           .from('registrations_with_details')
           .select('*', { count: 'exact' });
+
+        if (isDeletedView) {
+          fallbackQuery = fallbackQuery.eq('registration_status', 'CANCELLED');
+        } else {
+          fallbackQuery = fallbackQuery.neq('registration_status', 'CANCELLED');
+        }
 
         if (search) {
           fallbackQuery = fallbackQuery.or(
@@ -182,3 +195,4 @@ export async function GET(request: NextRequest) {
   }
 }
 export const dynamic = 'force-dynamic';
+

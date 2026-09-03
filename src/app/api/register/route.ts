@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
           }
         }, { status: 400 });
       } else {
-        // If it's PENDING, update the details in case they had typos, and reuse the ticket_token
+        // If it's PENDING or CANCELLED, update the details and reactivate to PENDING
         const { data: updatedReg, error: updateError } = await supabaseAdmin
           .from('registrations')
           .update({
@@ -141,6 +141,9 @@ export async function POST(request: NextRequest) {
             phone: data.phone,
             email: data.email,
             photo_path: data.photo_path,
+            registration_status: 'PENDING',
+            deleted_at: null,
+            is_deleted: false,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingReg.id)

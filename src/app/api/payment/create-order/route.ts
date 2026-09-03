@@ -59,6 +59,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    if (reg.registration_status === 'CANCELLED') {
+      await supabaseAdmin
+        .from('registrations')
+        .update({ registration_status: 'PENDING', updated_at: new Date().toISOString() })
+        .eq('id', registration_id);
+    }
+
     // 2. Initialize Razorpay credentials & calculate year-based fee (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
