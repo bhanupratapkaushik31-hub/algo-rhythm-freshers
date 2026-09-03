@@ -112,8 +112,8 @@ export async function GET(request: NextRequest) {
     const enteredCount = entriesCompleted || 0;
     const notEnteredCount = Math.max(0, paidCount - enteredCount);
 
-    // Calculate 2.3% payment deductions
-    const deductionRate = 0.023;
+    // Calculate 2.6% payment deductions
+    const deductionRate = 0.026;
     const deductionsAmount = Number((totalCollection * deductionRate).toFixed(2));
     const paymentAfterDeductions = Number((totalCollection * (1 - deductionRate)).toFixed(2));
 
