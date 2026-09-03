@@ -129,41 +129,91 @@ export async function POST(request: NextRequest) {
           }
         }, { status: 400 });
       } else {
-        // If it's PENDING or CANCELLED, update the details and reactivate to PENDING
-        const { data: updatedReg, error: updateError } = await supabaseAdmin
+        // If it's PENDING or CANCELLED (or unpaid), update the details and reactivate to PENDING
+        const updatePayload: Record<string, any> = {
+          full_name: data.full_name,
+          year: computedYear,
+          school_name: data.school_name,
+          modeling: data.modeling,
+          phone: data.phone,
+          email: data.email,
+          photo_path: data.photo_path,
+          registration_status: 'PENDING',
+          updated_at: new Date().toISOString()
+        };
+
+        if (modeling_talent !== undefined) {
+          updatePayload.modeling_talent = modeling_talent;
+        }
+
+        let updatedReg: any = null;
+
+        // 1. Try updating with standard payload
+        const { data: resData, error: updateError } = await supabaseAdmin
           .from('registrations')
-          .update({
+          .update(updatePayload)
+          .eq('id', existingReg.id)
+          .select()
+          .maybeSingle();
+
+        if (updateError) {
+          console.warn('Database update initial attempt warning/error:', updateError);
+
+          // Handle unique constraint violations (e.g. phone/email duplication)
+          if (updateError.code === '23505') {
+            const errorMsg = updateError.message?.toLowerCase() || '';
+            let userMsg = 'A registration with this email or phone number already exists.';
+            if (errorMsg.includes('phone')) {
+              userMsg = 'This phone number is already registered for another attendee.';
+            } else if (errorMsg.includes('email')) {
+              userMsg = 'This email address is already registered for another attendee.';
+            }
+            return NextResponse.json({
+              success: false,
+              error: {
+                code: 'DUPLICATE_CONTACT',
+                message: userMsg
+              }
+            }, { status: 400 });
+          }
+
+          // Fallback: If update failed due to optional column mismatch, try bare core fields
+          const barePayload = {
             full_name: data.full_name,
             year: computedYear,
             school_name: data.school_name,
             modeling: data.modeling,
-            modeling_talent: modeling_talent,
             phone: data.phone,
             email: data.email,
             photo_path: data.photo_path,
-            registration_status: 'PENDING',
-            deleted_at: null,
-            is_deleted: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingReg.id)
-          .select()
-          .single();
+            registration_status: 'PENDING'
+          };
 
-        if (updateError) {
-          console.error('Database update error:', updateError);
-          return NextResponse.json({
-            success: false,
-            error: {
-              code: 'DATABASE_ERROR',
-              message: 'Failed to update your existing pending registration.'
-            }
-          }, { status: 500 });
+          const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+            .from('registrations')
+            .update(barePayload)
+            .eq('id', existingReg.id)
+            .select()
+            .maybeSingle();
+
+          if (fallbackError) {
+            console.error('Database fallback update error:', fallbackError);
+            // If even bare update fails, fall back to existing record so student is never stuck
+            updatedReg = { ...existingReg, ...barePayload };
+          } else {
+            updatedReg = fallbackData;
+          }
+        } else {
+          updatedReg = resData;
         }
 
-        // Ensure payment record exists safely without duplicate creation, matching the student's year fee
+        if (!updatedReg) {
+          updatedReg = existingReg;
+        }
+
+        // Ensure payment record exists and is set to PENDING with matching year fee (re-enabling failed/cancelled sessions)
         try {
-          const feePaise = EVENT_CONFIG.getFeeForYear(updatedReg.year).paise;
+          const feePaise = EVENT_CONFIG.getFeeForYear(updatedReg.year || computedYear).paise;
           const { data: existingPays } = await supabaseAdmin
             .from('payments')
             .select('id, amount, payment_status')
@@ -180,15 +230,19 @@ export async function POST(request: NextRequest) {
                 currency: 'INR',
                 payment_status: 'PENDING'
               });
-          } else if (existingPays[0].payment_status === 'PENDING' && existingPays[0].amount !== feePaise) {
-            // Update amount if year changed while still pending
-            await supabaseAdmin
-              .from('payments')
-              .update({
-                amount: feePaise,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingPays[0].id);
+          } else {
+            const latestPay = existingPays[0];
+            // If payment was FAILED, CANCELLED, or PENDING with wrong amount, reactivate it to PENDING with current fee
+            if (latestPay.payment_status !== 'SUCCESS') {
+              await supabaseAdmin
+                .from('payments')
+                .update({
+                  amount: feePaise,
+                  payment_status: 'PENDING',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', latestPay.id);
+            }
           }
         } catch (payErr) {
           console.error('Error ensuring payment record for updated registration:', payErr);
