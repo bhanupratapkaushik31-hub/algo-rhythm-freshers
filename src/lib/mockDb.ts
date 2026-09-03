@@ -211,11 +211,18 @@ export function mockGetStats() {
   const notYetEntered = Math.max(0, paidCount - entriesCompleted);
   const modelingRegistrations = paidRegs.filter(r => r.modeling === 'Yes').length;
 
+  // Calculate 2.3% payment deductions
+  const deductionRate = 0.023;
+  const deductionsAmount = Number((totalCollection * deductionRate).toFixed(2));
+  const paymentAfterDeductions = Number((totalCollection * (1 - deductionRate)).toFixed(2));
+
   return {
     total_registrations: totalReg,
     paid_registrations: paidCount,
     pending_payments: pendingReg,
     total_collection: totalCollection,
+    deductions_amount: deductionsAmount,
+    payment_after_deductions: paymentAfterDeductions,
     entries_completed: entriesCompleted,
     not_yet_entered: notYetEntered,
     modeling_registrations: modelingRegistrations

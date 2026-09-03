@@ -34,6 +34,8 @@ interface StatsData {
   entries_completed: number;
   not_yet_entered: number;
   total_collection: number;
+  payment_after_deductions?: number;
+  deductions_amount?: number;
 }
 
 interface CoordinatorActivity {
@@ -326,6 +328,22 @@ export default function AdminDashboard() {
                 </div>
                 <div className="p-4 rounded-xl bg-amber-500/10 text-amber-400">
                   <TrendingUp className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Card 9: Payment after Deductions */}
+              <div className="glass-card rounded-2xl p-6 flex items-center justify-between border-emerald-500/20 bg-emerald-950/10">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Payment after Deductions</span>
+                  <h3 className="text-3xl font-extrabold font-outfit text-emerald-400 mt-1.5">
+                    ₹{(stats.payment_after_deductions ?? Number((stats.total_collection * 0.977).toFixed(2))).toLocaleString('en-IN')}
+                  </h3>
+                  <span className="text-[10px] text-slate-400 block mt-1">
+                    Net payout (-2.3% fee: ₹{(stats.deductions_amount ?? Number((stats.total_collection * 0.023).toFixed(2))).toLocaleString('en-IN')})
+                  </span>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-500/10 text-emerald-400">
+                  <CreditCard className="w-6 h-6" />
                 </div>
               </div>
 

@@ -112,6 +112,11 @@ export async function GET(request: NextRequest) {
     const enteredCount = entriesCompleted || 0;
     const notEnteredCount = Math.max(0, paidCount - enteredCount);
 
+    // Calculate 2.3% payment deductions
+    const deductionRate = 0.023;
+    const deductionsAmount = Number((totalCollection * deductionRate).toFixed(2));
+    const paymentAfterDeductions = Number((totalCollection * (1 - deductionRate)).toFixed(2));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -126,7 +131,9 @@ export async function GET(request: NextRequest) {
         emails_failed: finalEmailsFailed || 0,
         entries_completed: enteredCount,
         not_yet_entered: notEnteredCount,
-        total_collection: totalCollection
+        total_collection: totalCollection,
+        deductions_amount: deductionsAmount,
+        payment_after_deductions: paymentAfterDeductions
       }
     });
 
@@ -140,4 +147,5 @@ export async function GET(request: NextRequest) {
 }
 
 export const dynamic = 'force-dynamic';
+
 
