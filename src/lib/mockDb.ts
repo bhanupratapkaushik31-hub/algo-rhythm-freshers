@@ -139,6 +139,46 @@ export function mockRestoreRegistration(id: string) {
   });
 }
 
+export function mockMarkAsPaid(id: string) {
+  const db = readMockDb();
+  const reg = db.registrations.find(r => r.id === id);
+  if (!reg) return null;
+
+  const nextSeq = db.registrations.length;
+  const ticketId = reg.ticket_id || `ALG26-CSE-${String(nextSeq).padStart(4, '0')}`;
+  const updatedReg = mockUpdateRegistration(id, {
+    registration_status: 'PAID',
+    ticket_id: ticketId,
+    deleted_at: null,
+    is_deleted: false
+  });
+
+  const existingPay = db.payments.find(p => p.registration_id === id);
+  const feePaise = reg.year === '2nd Year' ? 20000 : 10000;
+  const timestamp = new Date().toISOString();
+
+  if (existingPay) {
+    mockUpdatePayment(existingPay.id, {
+      payment_status: 'SUCCESS',
+      payment_method: 'MANUAL_ADMIN',
+      paid_at: timestamp
+    });
+  } else {
+    mockCreatePayment({
+      registration_id: id,
+      amount: feePaise,
+      currency: 'INR',
+      payment_status: 'SUCCESS',
+      payment_method: 'MANUAL_ADMIN',
+      razorpay_payment_id: `MANUAL_ADMIN_${id.substring(0, 8)}_${Date.now()}`,
+      razorpay_order_id: `order_manual_${id.substring(0, 8)}`,
+      paid_at: timestamp
+    });
+  }
+
+  return updatedReg;
+}
+
 // 5. Payment helpers
 export function mockGetPaymentByOrderId(orderId: string) {
   const db = readMockDb();

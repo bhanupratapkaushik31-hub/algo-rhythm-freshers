@@ -22,7 +22,9 @@ import {
   UserCheck,
   Users,
   Mail,
-  RefreshCw
+  RefreshCw,
+  Sparkles,
+  CreditCard
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -94,6 +96,45 @@ export default function AdminRegistrations() {
   const [cancelling, setCancelling] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [updatingEntry, setUpdatingEntry] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+
+  const handleMarkAsPaid = async (reg: RegistrationDetail) => {
+    const feeInr = reg.year === '2nd Year' ? 200 : 100;
+    const confirmMsg = `Mark ${reg.full_name} (${reg.registration_number}) as PAID?\n\n` +
+      `• Year & Fee: ${reg.year} (₹${feeInr})\n` +
+      `• Email: ${reg.email}\n\n` +
+      `This will update payment to SUCCESS, generate ticket, and send the official confirmation email.`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    setMarkingPaid(true);
+    try {
+      const response = await fetch(`/api/admin/registrations/${reg.id}/mark-paid`, {
+        method: 'POST'
+      });
+      const res = await response.json();
+
+      if (response.ok && res.success) {
+        const emailNotice = res.data?.email_sent 
+          ? ` Ticket confirmation email was dispatched to ${reg.email}.`
+          : (res.data?.email_error ? ` (Email note: ${res.data.email_error})` : '');
+        alert(`Success! Registration is now marked as PAID.${emailNotice}`);
+        fetchRegistrations();
+        if (selectedReg) {
+          handleSelectRegistration(selectedReg);
+        }
+      } else {
+        alert(res.error?.message || 'Failed to mark registration as paid.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error while marking registration as paid.');
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
 
   const handleSelectRegistration = async (reg: RegistrationDetail) => {
     setSelectedReg(reg);
@@ -955,6 +996,26 @@ export default function AdminRegistrations() {
                     </button>
                   )}
                 </>
+              )}
+
+              {selectedReg.registration_status === 'PENDING' && (
+                <button
+                  onClick={() => handleMarkAsPaid(selectedReg)}
+                  disabled={markingPaid}
+                  className="w-full inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-emerald-600/25 to-teal-600/25 border border-emerald-500/35 hover:border-emerald-500/60 hover:from-emerald-600/35 hover:to-teal-600/35 text-emerald-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-950/30 disabled:opacity-50"
+                >
+                  {markingPaid ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                      Marking as Paid & Sending Ticket...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      Mark as Paid & Send Ticket
+                    </>
+                  )}
+                </button>
               )}
 
               {/* soft delete trigger (Super Admin only) */}

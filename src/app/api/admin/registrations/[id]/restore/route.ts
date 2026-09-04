@@ -34,6 +34,8 @@ export async function POST(
       .from('registrations')
       .update({
         registration_status: restoredStatus,
+        deleted_at: null,
+        is_deleted: false,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)

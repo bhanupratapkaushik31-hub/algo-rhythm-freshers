@@ -13,6 +13,7 @@ import {
   Eye, 
   RotateCcw, 
   Trash2, 
+  CreditCard,
   X, 
   Loader2, 
   CheckCircle, 
@@ -96,6 +97,7 @@ export default function AdminDeletedData() {
   const [adminRole, setAdminRole] = useState<'super_admin' | 'admin' | 'scanner' | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [purgingId, setPurgingId] = useState<string | null>(null);
+  const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
 
   // Fetch logged in admin role
   useEffect(() => {
@@ -191,7 +193,49 @@ export default function AdminDeletedData() {
     }
   };
 
-  // 2. Restore / Recover Registration
+  // 2. Mark as Paid & Restore back to active registrations
+  const handleMarkAsPaid = async (reg: RegistrationDetail) => {
+    const feeInr = reg.year === '2nd Year' ? 200 : 100;
+    const confirmMsg = `Are you sure you want to mark this attendee as PAID and restore them?\n\n` +
+      `• Student: ${reg.full_name} (${reg.registration_number})\n` +
+      `• Year & Fee: ${reg.year} (₹${feeInr})\n` +
+      `• Email: ${reg.email}\n\n` +
+      `This action will:\n` +
+      `1. Restore registration to active registrations list\n` +
+      `2. Set Registration Status to PAID\n` +
+      `3. Create/update Payment record to SUCCESS\n` +
+      `4. Generate ticket & send confirmation email with QR code`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    setMarkingPaidId(reg.id);
+    try {
+      const response = await fetch(`/api/admin/registrations/${reg.id}/mark-paid`, {
+        method: 'POST'
+      });
+      const res = await response.json();
+
+      if (response.ok && res.success) {
+        const emailNotice = res.data?.email_sent 
+          ? `\n\nTicket confirmation email was dispatched to ${reg.email}.`
+          : (res.data?.email_error ? `\n\nNote: Email dispatch message - ${res.data.email_error}` : '');
+        alert(`Success! ${reg.full_name} has been marked as PAID and restored to active registrations.${emailNotice}`);
+        setSelectedReg(null);
+        fetchDeletedRegistrations();
+      } else {
+        alert(res.error?.message || 'Failed to mark registration as paid.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error while marking registration as paid.');
+    } finally {
+      setMarkingPaidId(null);
+    }
+  };
+
+  // 3. Restore / Recover Registration
   const handleRestoreRegistration = async (id: string) => {
     if (!window.confirm("Are you sure you want to restore this registration? It will reappear in the active registrations list and dashboard statistics.")) {
       return;
@@ -496,9 +540,19 @@ export default function AdminDeletedData() {
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
                         <button
+                          onClick={() => handleMarkAsPaid(reg)}
+                          disabled={markingPaidId === reg.id || restoringId === reg.id || purgingId === reg.id}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+                          title="Mark as Paid, restore to active registrations, and dispatch ticket email"
+                        >
+                          {markingPaidId === reg.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+                          Mark Paid
+                        </button>
+
+                        <button
                           onClick={() => handleRestoreRegistration(reg.id)}
-                          disabled={restoringId === reg.id}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
+                          disabled={restoringId === reg.id || markingPaidId === reg.id}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-indigo-300 font-bold text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
                           title="Restore back to active registrations"
                         >
                           {restoringId === reg.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
@@ -508,7 +562,7 @@ export default function AdminDeletedData() {
                         {adminRole === 'super_admin' && (
                           <button
                             onClick={() => handlePermanentPurge(reg.id)}
-                            disabled={purgingId === reg.id}
+                            disabled={purgingId === reg.id || markingPaidId === reg.id}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 font-bold text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
                             title="Permanently purge from database"
                           >
@@ -570,26 +624,46 @@ export default function AdminDeletedData() {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2.5">
               <button
-                onClick={() => handleRestoreRegistration(selectedReg.id)}
-                disabled={restoringId === selectedReg.id}
-                className="inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                onClick={() => handleMarkAsPaid(selectedReg)}
+                disabled={markingPaidId === selectedReg.id || restoringId === selectedReg.id || purgingId === selectedReg.id}
+                className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600/25 to-teal-600/25 border border-emerald-500/40 hover:border-emerald-500/60 hover:from-emerald-600/35 hover:to-teal-600/35 text-emerald-300 text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-950/40 disabled:opacity-50"
               >
-                {restoringId === selectedReg.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                Restore Registration
+                {markingPaidId === selectedReg.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                    Processing Payment & Dispatching Ticket...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    Mark as Paid & Send Ticket Email
+                  </>
+                )}
               </button>
 
-              {adminRole === 'super_admin' && (
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
-                  onClick={() => handlePermanentPurge(selectedReg.id)}
-                  disabled={purgingId === selectedReg.id}
-                  className="inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  onClick={() => handleRestoreRegistration(selectedReg.id)}
+                  disabled={restoringId === selectedReg.id || markingPaidId === selectedReg.id}
+                  className="inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {purgingId === selectedReg.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  Purge Permanently
+                  {restoringId === selectedReg.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  Restore Only
                 </button>
-              )}
+
+                {adminRole === 'super_admin' && (
+                  <button
+                    onClick={() => handlePermanentPurge(selectedReg.id)}
+                    disabled={purgingId === selectedReg.id || markingPaidId === selectedReg.id}
+                    className="inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {purgingId === selectedReg.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Purge
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Details */}
