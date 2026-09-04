@@ -10,7 +10,8 @@ import {
   AlertTriangle, 
   ArrowLeft, 
   CheckCircle,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { EVENT_CONFIG } from '@/config/event';
@@ -444,7 +445,29 @@ function PaymentContent() {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h2 className="text-lg font-bold text-white font-outfit mb-2">Checkout Error</h2>
-            <p className="text-slate-400 text-xs leading-relaxed mb-6">{error}</p>
+            <p className="text-slate-400 text-xs leading-relaxed mb-4">{error}</p>
+
+            {/* Support Note */}
+            <div className="w-full text-left p-3.5 bg-amber-950/20 border border-amber-500/30 rounded-xl text-amber-200 text-xs mb-5 space-y-1.5">
+              <p className="font-extrabold text-amber-300">
+                ⚠️ Did money get deducted from your account?
+              </p>
+              <p className="font-bold text-slate-200 text-[11px] leading-snug">
+                If your payment was completed, please wait <strong>4–6 hours</strong>. Your ticket will be automatically generated and sent to your email, or a full refund will be processed.
+              </p>
+              <div className="pt-1 text-[11px]">
+                <a 
+                  href="https://wa.me/919441262727?text=Hi%20Vaidya%20Vaibhav,%20my%20payment%20deducted%20but%20checkout%20showed%20an%20error."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-emerald-400 font-extrabold hover:underline"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Contact Vaidya Vaibhav on WhatsApp: +91 94412 62727
+                </a>
+              </div>
+            </div>
+
             <div className="flex gap-4 w-full">
               <Link 
                 href="/register"
@@ -524,11 +547,45 @@ function PaymentContent() {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 p-3 bg-purple-950/20 border border-purple-500/10 rounded-xl text-[10px] text-purple-300 mb-6 leading-relaxed">
+              <div className="flex items-center gap-2 p-3 bg-purple-950/20 border border-purple-500/10 rounded-xl text-[10px] text-purple-300 mb-4 leading-relaxed">
                 <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
                 <span>Secured by Razorpay. Complete payment before the session expires.</span>
               </div>
             )}
+
+            {/* IMPORTANT PAYMENT & TICKET NOTICE (BOLD BIG LETTERS) */}
+            <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-500/20 via-purple-900/30 to-pink-950/20 border-2 border-amber-400/60 rounded-2xl text-amber-200 mb-6 shadow-xl shadow-amber-950/40 relative overflow-hidden">
+              <div className="absolute top-0 right-0 transform translate-x-2 -translate-y-2 bg-amber-500 text-black text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl shadow-md">
+                NOTICE
+              </div>
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 rounded-xl bg-amber-500/25 border border-amber-400/40 text-amber-300 shrink-0 mt-0.5 shadow-inner">
+                  <AlertTriangle className="w-6 h-6 animate-pulse text-amber-400" />
+                </div>
+                <div className="space-y-2.5">
+                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-300 font-outfit">
+                    ⚠️ IMPORTANT PAYMENT & TICKET NOTICE:
+                  </h3>
+                  <p className="text-xs sm:text-[13px] font-extrabold text-white leading-snug">
+                    IF PAYMENT SUCCEEDS AND TICKET IS NOT GENERATED, KINDLY WAIT <span className="text-amber-300 underline font-black text-sm">4–6 HOURS</span>, SYSTEM WILL GENERATE AND SEND AT YOUR <span className="text-amber-300 font-black">MAIL</span>, OR <span className="text-amber-300 font-black">REFUND</span> WILL BE SENT.
+                  </p>
+                  <div className="pt-2 border-t border-amber-400/25 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <span className="text-xs font-bold text-slate-200">
+                      Contact <strong className="text-white font-extrabold">Vaidya Vaibhav</strong> for any query:
+                    </span>
+                    <a 
+                      href="https://wa.me/919441262727?text=Hi%20Vaidya%20Vaibhav,%20I%20have%20a%20query%20regarding%20my%20payment%20for%20ALGO-RHYTHM%202K26."
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-300 font-black text-xs transition-all shadow-md cursor-pointer group"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                      <span>WhatsApp: +91 94412 62727</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Action buttons */}
             <div className="space-y-3">
