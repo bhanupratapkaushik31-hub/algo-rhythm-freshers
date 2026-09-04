@@ -28,26 +28,45 @@ export async function POST(
       .maybeSingle();
 
     const restoredStatus = pay ? 'PAID' : 'PENDING';
+    const timestamp = new Date().toISOString();
 
-    // 3. Un-delete the registration by setting registration_status back to PAID or PENDING
-    const { data: reg, error } = await supabaseAdmin
+    // 3. Un-delete the registration with schema-safe fallback
+    let reg: any = null;
+
+    const { data: fullData, error: fullErr } = await supabaseAdmin
       .from('registrations')
       .update({
         registration_status: restoredStatus,
         deleted_at: null,
         is_deleted: false,
-        updated_at: new Date().toISOString()
+        updated_at: timestamp
       })
       .eq('id', id)
       .select()
       .maybeSingle();
 
-    if (error) {
-      console.error('Restore registration DB error:', error);
-      return NextResponse.json({
-        success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to restore registration.' }
-      }, { status: 500 });
+    if (fullErr) {
+      console.warn('[Restore API] Full update failed, falling back to core payload:', fullErr.message);
+      const { data: coreData, error: coreErr } = await supabaseAdmin
+        .from('registrations')
+        .update({
+          registration_status: restoredStatus,
+          updated_at: timestamp
+        })
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (coreErr) {
+        console.error('[Restore API] Core update error:', coreErr);
+        return NextResponse.json({
+          success: false,
+          error: { code: 'DATABASE_ERROR', message: `Failed to restore registration: ${coreErr.message}` }
+        }, { status: 500 });
+      }
+      reg = coreData;
+    } else {
+      reg = fullData;
     }
 
     if (!reg) {
