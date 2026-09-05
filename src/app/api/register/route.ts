@@ -64,13 +64,12 @@ export async function POST(request: NextRequest) {
 
     // 2. Server-side enforcement of modeling_talent logic
     // ALWAYS force null if modeling is No, regardless of what client sends.
-    // If modeling is enrolled (Yes / Male / Female) but talent is blank/missing, reject.
-    const isModelingEnrolled = data.modeling && data.modeling !== 'No';
-    const modeling_talent: string | null = isModelingEnrolled
+    // If modeling is Yes but talent is blank/missing, reject.
+    const modeling_talent: string | null = data.modeling === 'Yes'
       ? (data.modeling_talent?.trim() || null)
       : null;
 
-    if (isModelingEnrolled && !modeling_talent) {
+    if (data.modeling === 'Yes' && !modeling_talent) {
       return NextResponse.json({
         success: false,
         error: {

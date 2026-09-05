@@ -37,8 +37,6 @@ export async function GET(request: NextRequest) {
       { count: pendingReg, error: err3 },
       { count: failedPayments, error: errPayments },
       { count: modelingYes, error: errModelingYes },
-      { count: modelingMale, error: errModelingMale },
-      { count: modelingFemale, error: errModelingFemale },
       { count: modelingNo, error: errModelingNo },
       { count: emailsSent, error: errEmailsSent },
       { count: emailsFailed, error: errEmailsFailed },
@@ -53,12 +51,8 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('registration_status', 'PENDING'),
       // Failed Payments
       supabaseAdmin.from('payments').select('*', { count: 'exact', head: true }).eq('payment_status', 'FAILED'),
-      // Modeling - Yes (Total Enrolled)
-      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).neq('modeling', 'No').neq('registration_status', 'CANCELLED'),
-      // Modeling - Male
-      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).or('modeling.eq.Male,modeling.ilike.%Male%,modeling.eq.Yes - Male').neq('registration_status', 'CANCELLED'),
-      // Modeling - Female
-      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).or('modeling.eq.Female,modeling.ilike.%Female%,modeling.eq.Yes - Female').neq('registration_status', 'CANCELLED'),
+      // Modeling - Yes
+      supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('modeling', 'Yes').neq('registration_status', 'CANCELLED'),
       // Modeling - No
       supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('modeling', 'No').neq('registration_status', 'CANCELLED'),
       // Emails - Sent
@@ -75,30 +69,10 @@ export async function GET(request: NextRequest) {
     const finalPaidReg = paidReg;
     const finalPendingReg = pendingReg;
     const finalModelingYes = modelingYes;
-    let finalModelingMale = modelingMale || 0;
-    let finalModelingFemale = modelingFemale || 0;
     const finalModelingNo = modelingNo;
     const finalEmailsSent = emailsSent;
     const finalEmailsFailed = emailsFailed;
     const finalPaidRegsData = paidRegsData;
-
-    // Additional resilience: check if gender column exists and was used for gender selection
-    if (finalModelingMale === 0 && finalModelingFemale === 0) {
-      try {
-        const [mGenderRes, fGenderRes] = await Promise.all([
-          supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('gender', 'Male').neq('modeling', 'No').neq('registration_status', 'CANCELLED'),
-          supabaseAdmin.from('registrations').select('*', { count: 'exact', head: true }).eq('gender', 'Female').neq('modeling', 'No').neq('registration_status', 'CANCELLED'),
-        ]);
-        if (!mGenderRes?.error && typeof mGenderRes?.count === 'number') {
-          finalModelingMale = mGenderRes.count;
-        }
-        if (!fGenderRes?.error && typeof fGenderRes?.count === 'number') {
-          finalModelingFemale = fGenderRes.count;
-        }
-      } catch (err) {
-        // Silently catch in case gender column does not exist
-      }
-    }
 
     let entriesCompleted = 0;
     if (!errEntries) {
@@ -151,8 +125,6 @@ export async function GET(request: NextRequest) {
         pending_payments: finalPendingReg || 0,
         failed_payments: failedPayments || 0,
         modeling_yes: finalModelingYes || 0,
-        modeling_male: finalModelingMale || 0,
-        modeling_female: finalModelingFemale || 0,
         modeling_no: finalModelingNo || 0,
         tickets_generated: paidCount,
         emails_sent: finalEmailsSent || 0,

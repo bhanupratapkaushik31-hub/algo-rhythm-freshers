@@ -28,8 +28,6 @@ interface StatsData {
   pending_payments: number;
   failed_payments: number;
   modeling_yes: number;
-  modeling_male?: number;
-  modeling_female?: number;
   modeling_no: number;
   tickets_generated: number;
   emails_sent: number;

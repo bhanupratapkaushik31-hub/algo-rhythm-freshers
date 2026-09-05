@@ -26,7 +26,7 @@ export const registerSchema = z.object({
     .string()
     .trim()
     .min(1, "Please enter your school name."),
-  modeling: z.enum(['Yes', 'No', 'Male', 'Female', 'Yes - Male', 'Yes - Female'], {
+  modeling: z.enum(['Yes', 'No'], {
     errorMap: () => ({ message: "Please select whether you want to enroll for modeling." }),
   }),
   modeling_talent: z
@@ -47,8 +47,8 @@ export const registerSchema = z.object({
     .string()
     .optional(),
 }).superRefine((data, ctx) => {
-  // Cross-field validation: modeling_talent is required when modeling is enrolled (not 'No')
-  if (data.modeling && data.modeling !== 'No' && !data.modeling_talent?.trim()) {
+  // Cross-field validation: modeling_talent is required when modeling = 'Yes'
+  if (data.modeling === 'Yes' && !data.modeling_talent?.trim()) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['modeling_talent'],

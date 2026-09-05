@@ -249,9 +249,7 @@ export function mockGetStats() {
   
   const entriesCompleted = db.entries.length;
   const notYetEntered = Math.max(0, paidCount - entriesCompleted);
-  const modelingYes = activeRegs.filter(r => r.modeling && r.modeling !== 'No').length;
-  const modelingMale = activeRegs.filter(r => (r.modeling && r.modeling.toLowerCase().includes('male') && !r.modeling.toLowerCase().includes('female')) || r.gender === 'Male').length;
-  const modelingFemale = activeRegs.filter(r => (r.modeling && r.modeling.toLowerCase().includes('female')) || r.gender === 'Female').length;
+  const modelingYes = activeRegs.filter(r => r.modeling === 'Yes').length;
   const modelingNo = activeRegs.filter(r => r.modeling === 'No').length;
 
   // Calculate 2.5% payment deductions
@@ -270,8 +268,6 @@ export function mockGetStats() {
     not_yet_entered: notYetEntered,
     modeling_registrations: modelingYes,
     modeling_yes: modelingYes,
-    modeling_male: modelingMale,
-    modeling_female: modelingFemale,
     modeling_no: modelingNo
   };
 }
@@ -333,15 +329,7 @@ export function mockListRegistrations(params: any) {
   }
 
   if (modeling !== 'All') {
-    if (modeling === 'Male') {
-      joinedList = joinedList.filter(r => (r.modeling && r.modeling.toLowerCase().includes('male') && !r.modeling.toLowerCase().includes('female')) || r.gender === 'Male');
-    } else if (modeling === 'Female') {
-      joinedList = joinedList.filter(r => (r.modeling && r.modeling.toLowerCase().includes('female')) || r.gender === 'Female');
-    } else if (modeling === 'Yes') {
-      joinedList = joinedList.filter(r => r.modeling && r.modeling !== 'No');
-    } else {
-      joinedList = joinedList.filter(r => r.modeling === modeling);
-    }
+    joinedList = joinedList.filter(r => r.modeling === modeling);
   }
 
   if (paymentStatus !== 'All') {
