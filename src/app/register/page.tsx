@@ -457,6 +457,8 @@ export default function Register() {
                     })}
                   >
                     <option value="No" className="bg-[#0f0a24] text-white">No</option>
+                    <option value="Yes - Male" className="bg-[#0f0a24] text-white">Yes - Male</option>
+                    <option value="Yes - Female" className="bg-[#0f0a24] text-white">Yes - Female</option>
                     <option value="Yes" className="bg-[#0f0a24] text-white">Yes</option>
                   </select>
                   {errors.modeling && (
@@ -464,9 +466,9 @@ export default function Register() {
                   )}
                 </div>
 
-                {/* 4b. Conditional Modeling Talent Field — only visible when modeling = 'Yes' */}
+                {/* 4b. Conditional Modeling Talent Field — visible when modeling is enrolled */}
                 <AnimatePresence>
-                  {modelingValue === 'Yes' && (
+                  {modelingValue && modelingValue !== 'No' && (
                     <motion.div
                       key="modeling-talent-field"
                       initial={{ opacity: 0, height: 0, overflow: 'hidden' }}

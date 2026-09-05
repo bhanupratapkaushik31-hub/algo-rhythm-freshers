@@ -55,7 +55,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (modeling !== 'All') {
-      query = query.eq('modeling', modeling);
+      if (modeling === 'Male') {
+        query = query.or('modeling.eq.Male,modeling.ilike.%Male%,modeling.eq.Yes - Male');
+      } else if (modeling === 'Female') {
+        query = query.or('modeling.eq.Female,modeling.ilike.%Female%,modeling.eq.Yes - Female');
+      } else if (modeling === 'Yes') {
+        query = query.neq('modeling', 'No');
+      } else {
+        query = query.eq('modeling', modeling);
+      }
     }
 
     if (paymentStatus !== 'All') {

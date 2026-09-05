@@ -471,7 +471,9 @@ export default function AdminRegistrations() {
               className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none cursor-pointer"
             >
               <option value="All" className="bg-[#0c0724]">All preferences</option>
-              <option value="Yes" className="bg-[#0c0724]">Modeling: Yes</option>
+              <option value="Yes" className="bg-[#0c0724]">Modeling: Yes (All)</option>
+              <option value="Male" className="bg-[#0c0724]">Modeling: Male</option>
+              <option value="Female" className="bg-[#0c0724]">Modeling: Female</option>
               <option value="No" className="bg-[#0c0724]">Modeling: No</option>
             </select>
           </div>

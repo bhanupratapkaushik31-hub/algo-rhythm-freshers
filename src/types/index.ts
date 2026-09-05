@@ -6,7 +6,7 @@ export interface Registration {
   full_name: string;
   year: '1st Year' | '2nd Year';
   school_name: string;
-  modeling: 'Yes' | 'No';
+  modeling: 'Yes' | 'No' | 'Male' | 'Female' | 'Yes - Male' | 'Yes - Female' | string;
   phone: string;
   email: string;
   registration_status: 'PENDING' | 'PAID' | 'CANCELLED';

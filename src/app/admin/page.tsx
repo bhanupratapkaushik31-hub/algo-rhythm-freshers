@@ -17,7 +17,8 @@ import {
   MailWarning,
   QrCode,
   Calendar,
-  UserCheck
+  UserCheck,
+  Sparkles
 } from 'lucide-react';
 import { EVENT_CONFIG } from '@/config/event';
 
@@ -27,6 +28,8 @@ interface StatsData {
   pending_payments: number;
   failed_payments: number;
   modeling_yes: number;
+  modeling_male?: number;
+  modeling_female?: number;
   modeling_no: number;
   tickets_generated: number;
   emails_sent: number;
@@ -288,10 +291,34 @@ export default function AdminDashboard() {
                 <div>
                   <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Modeling Yes</span>
                   <h3 className="text-3xl font-extrabold font-outfit text-pink-400 mt-1.5">{stats.modeling_yes}</h3>
-                  <span className="text-[10px] text-slate-500 block mt-1">Enrolled participants</span>
+                  <span className="text-[10px] text-slate-500 block mt-1">Total enrolled participants</span>
                 </div>
                 <div className="p-4 rounded-xl bg-pink-500/10 text-pink-400">
                   <Crown className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Card 5a: Modeling Male */}
+              <div className="glass-card rounded-2xl p-6 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Modeling Male</span>
+                  <h3 className="text-3xl font-extrabold font-outfit text-sky-400 mt-1.5">{stats.modeling_male ?? 0}</h3>
+                  <span className="text-[10px] text-slate-500 block mt-1">Male models count</span>
+                </div>
+                <div className="p-4 rounded-xl bg-sky-500/10 text-sky-400">
+                  <Users className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Card 5b: Modeling Female */}
+              <div className="glass-card rounded-2xl p-6 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Modeling Female</span>
+                  <h3 className="text-3xl font-extrabold font-outfit text-rose-400 mt-1.5">{stats.modeling_female ?? 0}</h3>
+                  <span className="text-[10px] text-slate-500 block mt-1">Female models count</span>
+                </div>
+                <div className="p-4 rounded-xl bg-rose-500/10 text-rose-400">
+                  <Sparkles className="w-6 h-6" />
                 </div>
               </div>
 

@@ -249,7 +249,10 @@ export function mockGetStats() {
   
   const entriesCompleted = db.entries.length;
   const notYetEntered = Math.max(0, paidCount - entriesCompleted);
-  const modelingRegistrations = paidRegs.filter(r => r.modeling === 'Yes').length;
+  const modelingYes = activeRegs.filter(r => r.modeling && r.modeling !== 'No').length;
+  const modelingMale = activeRegs.filter(r => (r.modeling && r.modeling.toLowerCase().includes('male') && !r.modeling.toLowerCase().includes('female')) || r.gender === 'Male').length;
+  const modelingFemale = activeRegs.filter(r => (r.modeling && r.modeling.toLowerCase().includes('female')) || r.gender === 'Female').length;
+  const modelingNo = activeRegs.filter(r => r.modeling === 'No').length;
 
   // Calculate 2.5% payment deductions
   const deductionRate = 0.025;
@@ -265,7 +268,11 @@ export function mockGetStats() {
     payment_after_deductions: paymentAfterDeductions,
     entries_completed: entriesCompleted,
     not_yet_entered: notYetEntered,
-    modeling_registrations: modelingRegistrations
+    modeling_registrations: modelingYes,
+    modeling_yes: modelingYes,
+    modeling_male: modelingMale,
+    modeling_female: modelingFemale,
+    modeling_no: modelingNo
   };
 }
 
@@ -326,7 +333,15 @@ export function mockListRegistrations(params: any) {
   }
 
   if (modeling !== 'All') {
-    joinedList = joinedList.filter(r => r.modeling === modeling);
+    if (modeling === 'Male') {
+      joinedList = joinedList.filter(r => (r.modeling && r.modeling.toLowerCase().includes('male') && !r.modeling.toLowerCase().includes('female')) || r.gender === 'Male');
+    } else if (modeling === 'Female') {
+      joinedList = joinedList.filter(r => (r.modeling && r.modeling.toLowerCase().includes('female')) || r.gender === 'Female');
+    } else if (modeling === 'Yes') {
+      joinedList = joinedList.filter(r => r.modeling && r.modeling !== 'No');
+    } else {
+      joinedList = joinedList.filter(r => r.modeling === modeling);
+    }
   }
 
   if (paymentStatus !== 'All') {
