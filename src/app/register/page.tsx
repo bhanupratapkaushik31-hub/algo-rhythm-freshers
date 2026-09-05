@@ -15,7 +15,8 @@ import {
   ArrowLeft, 
   Loader2, 
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  FileText
 } from 'lucide-react';
 import Link from 'next/link';
 import { registerSchema, RegisterInput } from '@/lib/schemas';
@@ -285,8 +286,8 @@ export default function Register() {
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 relative">
       <div className="absolute top-[10%] left-[5%] w-[60px] h-[60px] bg-purple-500/10 rounded-full blur-lg animate-float-slow pointer-events-none" />
       
-      {/* Back button and My Ticket link */}
-      <div className="w-full max-w-2xl mb-6 flex justify-between items-center">
+      {/* Back button, Rules/Policy, and My Ticket link */}
+      <div className="w-full max-w-2xl mb-6 flex flex-wrap justify-between items-center gap-3">
         <Link 
           href="/" 
           className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors text-xs font-semibold uppercase tracking-wider"
@@ -294,12 +295,21 @@ export default function Register() {
           <ArrowLeft className="w-4 h-4" />
           Back to Event
         </Link>
-        <Link 
-          href="/my-ticket" 
-          className="text-xs font-semibold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors"
-        >
-          My Ticket
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/policy" 
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 text-purple-300 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5 text-purple-400" />
+            View Rules / Policy
+          </Link>
+          <Link 
+            href="/my-ticket" 
+            className="text-xs font-semibold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors"
+          >
+            My Ticket
+          </Link>
+        </div>
       </div>
 
 
@@ -637,7 +647,15 @@ export default function Register() {
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
-                  <span className="text-[10px] text-slate-500 tracking-wider">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
+                  <div className="space-y-1 text-center sm:text-left">
+                    <span className="text-[10px] text-slate-500 tracking-wider block">Fields marked with (*) are mandatory | <a href="/admin/login" className="hover:text-slate-300 transition-colors">Staff Portal</a></span>
+                    <p className="text-[10px] text-slate-400">
+                      By proceeding, you agree to the{' '}
+                      <Link href="/policy" className="text-purple-400 hover:text-purple-300 underline font-semibold">
+                        Event Rules & Policy (Strictly No Refund)
+                      </Link>.
+                    </p>
+                  </div>
                   <button
                     type="submit"
                     disabled={submitting || isRegNoBlocked || !detectedYear}

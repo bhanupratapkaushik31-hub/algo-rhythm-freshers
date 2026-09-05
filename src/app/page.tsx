@@ -18,7 +18,8 @@ import {
   Phone,
   ArrowRight,
   ChevronDown,
-  GraduationCap
+  GraduationCap,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EVENT_CONFIG } from '@/config/event';
@@ -41,12 +42,12 @@ export default function Home() {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
       } else {
         setIsEventStarted(false);
-        const d = Math.floor(difference / (1000 * 60 * 60 * 24));
-        const h = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const m = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-        const s = Math.floor((difference % (1000 * 60)) / 1000);
+        const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((difference % (1000 * 60)) / 1000);
 
-        setTimeLeft({ days: d, hours: h, minutes: m, seconds: s });
+        setTimeLeft({ days, hours, minutes, seconds });
       }
     };
 
@@ -103,6 +104,9 @@ export default function Home() {
               Register
             </Link>
           )}
+          <Link href="/policy" className="text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-white transition-colors">
+            Rules / Policy
+          </Link>
           <Link href="/my-ticket" className="text-xs font-semibold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors">
             My Ticket
           </Link>
@@ -168,10 +172,18 @@ export default function Home() {
 
             <button
               onClick={scrollToInfo}
-              className="inline-flex items-center gap-2 px-8 py-4 bg-white/5 border border-white/10 text-[#f8fafc] font-semibold rounded-full hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-sm tracking-wider uppercase"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white/5 border border-white/10 text-[#f8fafc] font-semibold rounded-full hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-sm tracking-wider uppercase cursor-pointer"
             >
               Explore Event
             </button>
+            
+            <Link
+              href="/policy"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-purple-500/10 border border-purple-500/25 text-purple-300 font-semibold rounded-full hover:bg-purple-500/20 hover:border-purple-500/40 transition-all duration-200 text-sm tracking-wider uppercase cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-purple-400" />
+              View Rules / Policy
+            </Link>
           </motion.div>
 
           {/* Duty Leaves Highlighted Notice */}
@@ -441,6 +453,16 @@ export default function Home() {
             {EVENT_CONFIG.displayDate} &bull; {EVENT_CONFIG.displayTime} <br />
             {EVENT_CONFIG.venue} <br />
             Hosted by <strong>{EVENT_CONFIG.hostedBy}</strong>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-4 text-xs">
+            <Link href="/policy" className="text-purple-400 hover:text-purple-300 transition-colors font-semibold">
+              Event Rules & Policy
+            </Link>
+            <span className="text-slate-600">&bull;</span>
+            <Link href="/my-ticket" className="text-slate-400 hover:text-slate-300 transition-colors">
+              Retrieve Ticket
+            </Link>
           </div>
 
           <div className="w-16 h-px bg-white/10" />
