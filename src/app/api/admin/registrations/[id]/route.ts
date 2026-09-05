@@ -165,3 +165,77 @@ export async function DELETE(
   }
 }
 
+// PATCH update registration details (e.g. modeling participation, modeling talent)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    // 1. Verify admin permissions
+    const admin = await verifyAdminAuth(request, ['super_admin', 'admin']);
+    if (!admin) {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'You are not authorized to update registration details.' }
+      }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (body.modeling !== undefined) {
+      updatePayload.modeling = body.modeling;
+    }
+
+    if (body.modeling_talent !== undefined) {
+      updatePayload.modeling_talent = body.modeling === 'No' 
+        ? null 
+        : (typeof body.modeling_talent === 'string' ? body.modeling_talent.trim() : null);
+    }
+
+    if (body.full_name !== undefined) {
+      updatePayload.full_name = body.full_name;
+    }
+
+    if (body.phone !== undefined) {
+      updatePayload.phone = body.phone;
+    }
+
+    if (body.email !== undefined) {
+      updatePayload.email = body.email;
+    }
+
+    const { data: updatedReg, error } = await supabaseAdmin
+      .from('registrations')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error('Update registration DB error:', error);
+      return NextResponse.json({
+        success: false,
+        error: { code: 'DATABASE_ERROR', message: error.message || 'Failed to update registration record.' }
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: updatedReg
+    });
+
+  } catch (err: any) {
+    console.error('Update registration API crashed:', err);
+    return NextResponse.json({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: err.message || 'Crashed' }
+    }, { status: 500 });
+  }
+}
+
+

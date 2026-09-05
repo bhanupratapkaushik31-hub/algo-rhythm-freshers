@@ -24,7 +24,9 @@ import {
   Mail,
   RefreshCw,
   Sparkles,
-  CreditCard
+  CreditCard,
+  Edit3,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -98,6 +100,56 @@ export default function AdminRegistrations() {
   const [updatingEntry, setUpdatingEntry] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
 
+  // Admin Modeling Edit States
+  const [isEditingModeling, setIsEditingModeling] = useState(false);
+  const [editModelingValue, setEditModelingValue] = useState<string>('No');
+  const [editTalentValue, setEditTalentValue] = useState<string>('');
+  const [savingModeling, setSavingModeling] = useState(false);
+  const [modelingSaveMsg, setModelingSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleSaveModeling = async () => {
+    if (!selectedReg) return;
+    setSavingModeling(true);
+    setModelingSaveMsg(null);
+    try {
+      const response = await fetch(`/api/admin/registrations/${selectedReg.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modeling: editModelingValue,
+          modeling_talent: editModelingValue === 'No' ? null : editTalentValue
+        })
+      });
+      const res = await response.json();
+      if (response.ok && res.success) {
+        setModelingSaveMsg({ type: 'success', text: 'Modeling details updated successfully.' });
+        const updatedModeling = editModelingValue;
+        const updatedTalent = editModelingValue === 'No' ? null : (editTalentValue || null);
+        
+        setSelectedReg(prev => prev ? {
+          ...prev,
+          modeling: updatedModeling as any,
+          modeling_talent: updatedTalent
+        } : null);
+
+        setList(prev => prev.map(r => r.id === selectedReg.id ? {
+          ...r,
+          modeling: updatedModeling as any,
+          modeling_talent: updatedTalent
+        } : r));
+
+        setIsEditingModeling(false);
+      } else {
+        setModelingSaveMsg({ type: 'error', text: res.error?.message || 'Failed to update modeling details.' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setModelingSaveMsg({ type: 'error', text: 'Network error updating modeling.' });
+    } finally {
+      setSavingModeling(false);
+    }
+  };
+
   const handleMarkAsPaid = async (reg: RegistrationDetail) => {
     const feeInr = reg.year === '2nd Year' ? 200 : 100;
     const confirmMsg = `Mark ${reg.full_name} (${reg.registration_number}) as PAID?\n\n` +
@@ -139,12 +191,18 @@ export default function AdminRegistrations() {
   const handleSelectRegistration = async (reg: RegistrationDetail) => {
     setSelectedReg(reg);
     setSelectedLogs([]);
+    setIsEditingModeling(false);
+    setEditModelingValue(reg.modeling || 'No');
+    setEditTalentValue(reg.modeling_talent || '');
+    setModelingSaveMsg(null);
     setLoadingDetail(true);
     try {
       const response = await fetch(`/api/admin/registrations/${reg.id}`);
       const res = await response.json();
       if (response.ok && res.success && res.data) {
         setSelectedReg(prev => prev ? { ...prev, ...res.data } : res.data);
+        setEditModelingValue(res.data.modeling || 'No');
+        setEditTalentValue(res.data.modeling_talent || '');
         if (res.data.entry_logs) {
           setSelectedLogs(res.data.entry_logs);
         }
@@ -742,24 +800,117 @@ export default function AdminRegistrations() {
                     <span className="text-slate-500">School:</span>
                     <span className="font-semibold text-slate-300 text-right max-w-[200px] truncate">{selectedReg.school_name}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Modeling Participant:</span>
-                    <span className="font-bold text-slate-200">{selectedReg.modeling}</span>
+                  {/* Modeling Section (Interactive with Admin Edit) */}
+                  <div className="border-t border-b border-white/5 py-3 my-1 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-semibold">Modeling Participant:</span>
+                      {!isEditingModeling ? (
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                            selectedReg.modeling === 'No' 
+                              ? 'bg-slate-500/10 text-slate-400 border border-slate-500/20' 
+                              : 'bg-pink-500/10 text-pink-400 border border-pink-500/20'
+                          }`}>
+                            {selectedReg.modeling}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditModelingValue(selectedReg.modeling || 'No');
+                              setEditTalentValue(selectedReg.modeling_talent || '');
+                              setIsEditingModeling(true);
+                              setModelingSaveMsg(null);
+                            }}
+                            className="p-1 px-2 text-[10px] uppercase tracking-wider font-bold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            Edit
+                          </button>
+                        </div>
+                      ) : (
+                        <select
+                          value={editModelingValue}
+                          onChange={(e) => {
+                            setEditModelingValue(e.target.value);
+                            if (e.target.value === 'No') {
+                              setEditTalentValue('');
+                            }
+                          }}
+                          className="bg-[#0f0a24] border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs text-white outline-none cursor-pointer"
+                        >
+                          <option value="No">No</option>
+                          <option value="Yes">Yes</option>
+                          <option value="Yes - Male">Yes - Male</option>
+                          <option value="Yes - Female">Yes - Female</option>
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Modeling Talent / Performance Details or Input */}
+                    {!isEditingModeling ? (
+                      <div className="flex justify-between items-start gap-2 pt-1">
+                        <span className="text-slate-500 shrink-0">Modeling Talent / Performance:</span>
+                        <span className="text-slate-200 text-right leading-relaxed break-words font-medium">
+                          {selectedReg.modeling !== 'No'
+                            ? (selectedReg.modeling_talent || <span className="text-slate-500 italic">Not provided</span>)
+                            : <span className="text-slate-500 italic">Not interested</span>
+                          }
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 pt-2 bg-purple-950/20 border border-purple-500/20 p-3 rounded-xl">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">
+                          Modeling Talent / Performance:
+                        </label>
+                        {editModelingValue === 'No' ? (
+                          <p className="text-[11px] text-slate-400 italic bg-black/30 p-2 rounded-lg border border-white/5">
+                            Candidate will be marked as <strong>Not interested</strong> for modeling.
+                          </p>
+                        ) : (
+                          <textarea
+                            rows={2}
+                            value={editTalentValue}
+                            onChange={(e) => setEditTalentValue(e.target.value)}
+                            placeholder="e.g. Ramp walk, singing, dance, acting, etc."
+                            className="w-full bg-black/40 border border-purple-500/30 focus:border-purple-500 rounded-lg p-2 text-xs text-white placeholder-slate-500 outline-none resize-none"
+                          />
+                        )}
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingModeling(false);
+                              setModelingSaveMsg(null);
+                            }}
+                            disabled={savingModeling}
+                            className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-white/10 cursor-pointer disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveModeling}
+                            disabled={savingModeling}
+                            className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg shadow cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                          >
+                            {savingModeling ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {modelingSaveMsg && (
+                      <div className={`p-2 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 ${
+                        modelingSaveMsg.type === 'success' 
+                          ? 'bg-emerald-950/30 text-emerald-300 border border-emerald-500/20' 
+                          : 'bg-red-950/30 text-red-300 border border-red-500/20'
+                      }`}>
+                        {modelingSaveMsg.type === 'success' ? <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />}
+                        <span>{modelingSaveMsg.text}</span>
+                      </div>
+                    )}
                   </div>
-                  {/* Modeling Talent / Performance */}
-                  {selectedReg.modeling === 'Yes' ? (
-                    <div className="flex flex-col gap-1 border-t border-white/5 pt-2 mt-1">
-                      <span className="text-slate-500">Modeling Talent / Performance:</span>
-                      <span className="text-slate-200 text-right leading-relaxed break-words">
-                        {selectedReg.modeling_talent || <span className="text-slate-500 italic">Not provided</span>}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Modeling Talent / Performance:</span>
-                      <span className="text-slate-500 italic">Not interested</span>
-                    </div>
-                  )}
                   <div className="flex justify-between">
                     <span className="text-slate-500">Phone:</span>
                     <a href={`tel:${selectedReg.phone}`} className="font-bold text-purple-300 hover:text-purple-200">{selectedReg.phone}</a>
