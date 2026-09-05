@@ -2,19 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  CreditCard, 
-  Users, 
-  Crown, 
-  Music, 
-  Gamepad2, 
-  Gift, 
-  Sparkles, 
-  Utensils, 
-  PlusCircle, 
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  CreditCard,
+  Users,
+  Crown,
+  Music,
+  Gamepad2,
+  Gift,
+  Sparkles,
+  Utensils,
+  PlusCircle,
   Phone,
   ArrowRight,
   ChevronDown,
@@ -146,15 +146,15 @@ export default function Home() {
           </p>
 
           {/* CTAs */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8"
           >
             {isRegOpen ? (
-              <Link 
-                href="/register" 
+              <Link
+                href="/register"
                 className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-0.5 transition-all duration-200 text-sm tracking-wider uppercase"
               >
                 Register Now
@@ -165,8 +165,8 @@ export default function Home() {
                 Registrations Closed
               </div>
             )}
-            
-            <button 
+
+            <button
               onClick={scrollToInfo}
               className="inline-flex items-center gap-2 px-8 py-4 bg-white/5 border border-white/10 text-[#f8fafc] font-semibold rounded-full hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-sm tracking-wider uppercase"
             >
@@ -182,7 +182,7 @@ export default function Home() {
             className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs sm:text-sm font-extrabold uppercase tracking-wider shadow-lg shadow-emerald-950/30 mb-14"
           >
             <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>DL will be provided to all Registered members of School of Computing and Artificial Intelligence</span>
+            <span>DL will be provided to all Registered members of School of Computing and Artificial Intelligence (Sections Starting from K3)</span>
           </motion.div>
         </motion.div>
 
@@ -403,7 +403,7 @@ export default function Home() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {EVENT_CONFIG.contacts.map((contact, index) => (
-            <motion.div 
+            <motion.div
               key={index}
               initial={{ opacity: 0, scale: 0.95 }}
               whileInView={{ opacity: 1, scale: 1 }}
@@ -417,8 +417,8 @@ export default function Home() {
               <div>
                 <h4 className="font-bold text-white font-outfit">{contact.name}</h4>
                 <p className="text-xs text-slate-400 mb-1">Student Coordinator</p>
-                <a 
-                  href={`tel:${contact.phone.replace(/\s+/g, '')}`} 
+                <a
+                  href={`tel:${contact.phone.replace(/\s+/g, '')}`}
                   className="text-sm font-semibold text-purple-300 hover:text-purple-200 transition-colors inline-flex items-center gap-1.5"
                 >
                   {contact.phone}
@@ -435,7 +435,7 @@ export default function Home() {
           <div className="font-extrabold tracking-wide text-lg text-gradient-indigo-purple font-outfit">
             ALGO-RHYTHM 2K26
           </div>
-          
+
           <div className="text-xs text-slate-400 max-w-sm leading-relaxed">
             {EVENT_CONFIG.title} <br />
             {EVENT_CONFIG.displayDate} &bull; {EVENT_CONFIG.displayTime} <br />
