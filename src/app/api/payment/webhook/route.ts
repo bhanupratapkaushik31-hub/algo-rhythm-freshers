@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       // Fetch associated registration to check expected fee for the student's year
       const { data: reg, error: fetchRegErr } = await supabaseAdmin
         .from('registrations')
-        .select('registration_status, email_sent, ticket_token, full_name, registration_number, email, year, coupon_code')
+        .select('*')
         .eq('id', payment.registration_id)
         .maybeSingle();
 

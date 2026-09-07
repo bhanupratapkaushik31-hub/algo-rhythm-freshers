@@ -128,11 +128,63 @@ export async function POST(request: NextRequest) {
             message: 'An account/ticket already exists for this registration number. If you have already completed payment, please use your existing ticket.'
           }
         }, { status: 400 });
-        // 0. Calculate fee & coupon
-        const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
+      }
 
-        // If it's PENDING or CANCELLED (or unpaid), update the details and reactivate to PENDING
-        const updatePayload: Record<string, any> = {
+      // 0. Calculate fee & coupon
+      const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
+
+      // If it's PENDING or CANCELLED (or unpaid), update the details and reactivate to PENDING
+      const updatePayload: Record<string, any> = {
+        full_name: data.full_name,
+        year: computedYear,
+        school_name: data.school_name,
+        modeling: data.modeling,
+        phone: data.phone,
+        email: data.email,
+        photo_path: data.photo_path,
+        coupon_code: feeCalculation.couponCode,
+        discount_amount: feeCalculation.discountInr,
+        registration_status: 'PENDING',
+        updated_at: new Date().toISOString()
+      };
+
+      if (modeling_talent !== undefined) {
+        updatePayload.modeling_talent = modeling_talent;
+      }
+
+      let updatedReg: any = null;
+
+      // 1. Try updating with standard payload
+      const { data: resData, error: updateError } = await supabaseAdmin
+        .from('registrations')
+        .update(updatePayload)
+        .eq('id', existingReg.id)
+        .select()
+        .maybeSingle();
+
+      if (updateError) {
+        console.warn('Database update initial attempt warning/error:', updateError);
+
+        // Handle unique constraint violations (e.g. phone/email duplication)
+        if (updateError.code === '23505') {
+          const errorMsg = updateError.message?.toLowerCase() || '';
+          let userMsg = 'A registration with this email or phone number already exists.';
+          if (errorMsg.includes('phone')) {
+            userMsg = 'This phone number is already registered for another attendee.';
+          } else if (errorMsg.includes('email')) {
+            userMsg = 'This email address is already registered for another attendee.';
+          }
+          return NextResponse.json({
+            success: false,
+            error: {
+              code: 'DUPLICATE_CONTACT',
+              message: userMsg
+            }
+          }, { status: 400 });
+        }
+
+        // Fallback: If update failed due to optional column mismatch, try bare core fields
+        const barePayload = {
           full_name: data.full_name,
           year: computedYear,
           school_name: data.school_name,
@@ -140,165 +192,162 @@ export async function POST(request: NextRequest) {
           phone: data.phone,
           email: data.email,
           photo_path: data.photo_path,
-          coupon_code: feeCalculation.couponCode,
-          discount_amount: feeCalculation.discountInr,
-          registration_status: 'PENDING',
-          updated_at: new Date().toISOString()
+          registration_status: 'PENDING'
         };
 
-        if (modeling_talent !== undefined) {
-          updatePayload.modeling_talent = modeling_talent;
-        }
-
-        let updatedReg: any = null;
-
-        // 1. Try updating with standard payload
-        const { data: resData, error: updateError } = await supabaseAdmin
+        const { data: fallbackData, error: fallbackError } = await supabaseAdmin
           .from('registrations')
-          .update(updatePayload)
+          .update(barePayload)
           .eq('id', existingReg.id)
           .select()
           .maybeSingle();
 
-        if (updateError) {
-          console.warn('Database update initial attempt warning/error:', updateError);
-
-          // Handle unique constraint violations (e.g. phone/email duplication)
-          if (updateError.code === '23505') {
-            const errorMsg = updateError.message?.toLowerCase() || '';
-            let userMsg = 'A registration with this email or phone number already exists.';
-            if (errorMsg.includes('phone')) {
-              userMsg = 'This phone number is already registered for another attendee.';
-            } else if (errorMsg.includes('email')) {
-              userMsg = 'This email address is already registered for another attendee.';
-            }
-            return NextResponse.json({
-              success: false,
-              error: {
-                code: 'DUPLICATE_CONTACT',
-                message: userMsg
-              }
-            }, { status: 400 });
-          }
-
-          // Fallback: If update failed due to optional column mismatch, try bare core fields
-          const barePayload = {
-            full_name: data.full_name,
-            year: computedYear,
-            school_name: data.school_name,
-            modeling: data.modeling,
-            phone: data.phone,
-            email: data.email,
-            photo_path: data.photo_path,
-            registration_status: 'PENDING'
-          };
-
-          const { data: fallbackData, error: fallbackError } = await supabaseAdmin
-            .from('registrations')
-            .update(barePayload)
-            .eq('id', existingReg.id)
-            .select()
-            .maybeSingle();
-
-          if (fallbackError) {
-            console.error('Database fallback update error:', fallbackError);
-            // If even bare update fails, fall back to existing record so student is never stuck
-            updatedReg = { ...existingReg, ...barePayload, coupon_code: feeCalculation.couponCode };
-          } else {
-            updatedReg = fallbackData;
-          }
+        if (fallbackError) {
+          console.error('Database fallback update error:', fallbackError);
+          updatedReg = { ...existingReg, ...barePayload, coupon_code: feeCalculation.couponCode };
         } else {
-          updatedReg = resData;
+          updatedReg = fallbackData;
         }
+      } else {
+        updatedReg = resData;
+      }
 
-        if (!updatedReg) {
-          updatedReg = existingReg;
-        }
+      if (!updatedReg) {
+        updatedReg = existingReg;
+      }
 
-        // Ensure payment record exists and is set to PENDING with matching year fee (re-enabling failed/cancelled sessions)
-        try {
-          const feePaise = feeCalculation.paise;
-          const { data: existingPays } = await supabaseAdmin
+      // Ensure payment record exists and is set to PENDING with matching year fee (re-enabling failed/cancelled sessions)
+      try {
+        const feePaise = feeCalculation.paise;
+        const { data: existingPays } = await supabaseAdmin
+          .from('payments')
+          .select('id, amount, payment_status')
+          .eq('registration_id', updatedReg.id)
+          .order('created_at', { ascending: false });
+
+        if (!existingPays || existingPays.length === 0) {
+          await supabaseAdmin
             .from('payments')
-            .select('id, amount, payment_status')
-            .eq('registration_id', updatedReg.id)
-            .order('created_at', { ascending: false });
-
-          if (!existingPays || existingPays.length === 0) {
+            .insert({
+              registration_id: updatedReg.id,
+              razorpay_order_id: `order_pending_${updatedReg.id.substring(0, 8)}`,
+              amount: feePaise,
+              currency: 'INR',
+              payment_status: 'PENDING'
+            });
+        } else {
+          const latestPay = existingPays[0];
+          if (latestPay.payment_status !== 'SUCCESS') {
             await supabaseAdmin
               .from('payments')
-              .insert({
-                registration_id: updatedReg.id,
-                razorpay_order_id: `order_pending_${updatedReg.id.substring(0, 8)}`,
+              .update({
                 amount: feePaise,
-                currency: 'INR',
-                payment_status: 'PENDING'
-              });
-          } else {
-            const latestPay = existingPays[0];
-            // If payment was FAILED, CANCELLED, or PENDING with wrong amount, reactivate it to PENDING with current fee
-            if (latestPay.payment_status !== 'SUCCESS') {
-              await supabaseAdmin
-                .from('payments')
-                .update({
-                  amount: feePaise,
-                  payment_status: 'PENDING',
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', latestPay.id);
-            }
+                payment_status: 'PENDING',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', latestPay.id);
           }
-        } catch (payErr) {
-          console.error('Error ensuring payment record for updated registration:', payErr);
         }
-
-        return NextResponse.json({
-          success: true,
-          data: updatedReg
-        });
+      } catch (payErr) {
+        console.error('Error ensuring payment record for updated registration:', payErr);
       }
+
+      return NextResponse.json({
+        success: true,
+        data: updatedReg
+      });
     }
 
     // 5. Create new registration
     const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
     const ticketToken = crypto.randomBytes(24).toString('hex');
-    const { data: newReg, error: insertError } = await supabaseAdmin
+    let newReg: any = null;
+
+    // Primary insert attempt with all metadata
+    const primaryInsertPayload: Record<string, any> = {
+      registration_number: data.registration_number,
+      full_name: data.full_name,
+      year: computedYear,
+      school_name: data.school_name,
+      modeling: data.modeling,
+      modeling_talent: modeling_talent,
+      phone: data.phone,
+      email: data.email,
+      photo_path: data.photo_path,
+      coupon_code: feeCalculation.couponCode,
+      discount_amount: feeCalculation.discountInr,
+      ticket_token: ticketToken,
+      registration_status: 'PENDING'
+    };
+
+    const { data: insertedData, error: insertError } = await supabaseAdmin
       .from('registrations')
-      .insert({
+      .insert(primaryInsertPayload)
+      .select()
+      .maybeSingle();
+
+    if (insertError) {
+      console.warn('Primary registration insert warning/error:', insertError);
+
+      if (insertError.code === '23505') {
+        const errorMsg = insertError.message?.toLowerCase() || '';
+        let userMsg = 'This registration number is already registered.';
+        if (errorMsg.includes('phone')) {
+          userMsg = 'This phone number is already registered for another attendee.';
+        } else if (errorMsg.includes('email')) {
+          userMsg = 'This email address is already registered for another attendee.';
+        }
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: 'REGISTRATION_EXISTS',
+            message: userMsg
+          }
+        }, { status: 400 });
+      }
+
+      // Fallback insert attempt without optional coupon/talent columns in case database schema hasn't migrated them
+      const fallbackInsertPayload = {
         registration_number: data.registration_number,
         full_name: data.full_name,
         year: computedYear,
         school_name: data.school_name,
         modeling: data.modeling,
-        modeling_talent: modeling_talent,
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,
-        coupon_code: feeCalculation.couponCode,
-        discount_amount: feeCalculation.discountInr,
         ticket_token: ticketToken,
         registration_status: 'PENDING'
-      })
-      .select()
-      .single();
+      };
 
-    if (insertError) {
-      console.error('Database insert error:', insertError);
-      // Double check unique constraint violation code
-      if (insertError.code === '23505') {
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from('registrations')
+        .insert(fallbackInsertPayload)
+        .select()
+        .maybeSingle();
+
+      if (fallbackError) {
+        console.error('Database fallback insert error:', fallbackError);
         return NextResponse.json({
           success: false,
           error: {
-            code: 'REGISTRATION_EXISTS',
-            message: 'This registration number is already registered.'
+            code: 'DATABASE_ERROR',
+            message: `Failed to create registration: ${fallbackError.message || 'Please check your details and try again.'}`
           }
-        }, { status: 400 });
+        }, { status: 500 });
       }
+
+      newReg = fallbackData;
+    } else {
+      newReg = insertedData;
+    }
+
+    if (!newReg) {
       return NextResponse.json({
         success: false,
         error: {
           code: 'DATABASE_ERROR',
-          message: 'Failed to create registration. Please try again.'
+          message: 'Failed to retrieve created registration record. Please try again.'
         }
       }, { status: 500 });
     }

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     // Fetch student's registered details to calculate exact expected fee (125 -> 2nd Year ₹150 with ALGO50 or ₹200, 126 -> 1st Year ₹100)
     const { data: studentReg, error: regFetchError } = await supabaseAdmin
       .from('registrations')
-      .select('id, registration_number, year, ticket_token, email, coupon_code')
+      .select('*')
       .eq('id', registration_id)
       .maybeSingle();
 
