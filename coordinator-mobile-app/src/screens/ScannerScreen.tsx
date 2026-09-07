@@ -135,9 +135,12 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     );
   }
 
-  const student = result?.student;
-  const isSuccess = result?.success && result?.status === 'MARKED';
-  const isAlreadyEntered = result?.status === 'ALREADY_ENTERED';
+  const student = result?.student || result?.data?.student;
+  const status = result?.status || result?.data?.status;
+  const isSuccess = (result?.success === true) && (status === 'MARKED' || status === 'PENDING_CONFIRMATION' || !!student);
+  const isAlreadyEntered = status === 'ALREADY_ENTERED';
+  const isAdminTest = student?.id === 'admin-test-id' || result?.message?.includes('admin') || result?.data?.message?.includes('admin');
+  const displayMessage = result?.message || result?.data?.message || result?.error?.message || (isSuccess ? 'Entry scanned and verified.' : 'Invalid ticket.');
 
   return (
     <View style={styles.container}>
@@ -232,13 +235,13 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
               >
                 <Text style={styles.resultStatusText}>
                   {isSuccess
-                    ? '✅ ENTRY AUTHORIZED'
+                    ? (isAdminTest ? '✅ TEST SCAN SUCCESSFUL' : '✅ ENTRY AUTHORIZED')
                     : isAlreadyEntered
                     ? '⚠️ ALREADY ENTERED'
                     : '❌ ACCESS DENIED'}
                 </Text>
                 <Text style={styles.resultMessageText}>
-                  {result.message || (isSuccess ? 'Entry scanned and verified.' : 'Invalid ticket.')}
+                  {displayMessage}
                 </Text>
               </View>
 

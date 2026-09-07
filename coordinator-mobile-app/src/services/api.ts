@@ -1,10 +1,11 @@
-import { supabase } from './supabase';
+import { AuthService } from './auth';
 import { APP_CONFIG } from '../config/env';
 
 export interface VerifyResult {
   success: boolean;
   status?: 'MARKED' | 'ALREADY_ENTERED' | 'INVALID' | 'UNPAID' | 'CANCELLED';
   message?: string;
+  data?: any;
   student?: {
     id: string;
     ticket_id: string;
@@ -35,16 +36,13 @@ export const EntryService = {
    */
   async verifyTicket(ticketToken: string): Promise<VerifyResult> {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        return { success: false, error: { code: 'UNAUTHORIZED', message: 'Session expired. Please log in again.' } };
-      }
+      const token = await AuthService.getAccessToken();
 
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/entry/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           ticket_token: ticketToken.trim(),
@@ -70,16 +68,13 @@ export const EntryService = {
    */
   async markEntry(registrationId: string): Promise<{ success: boolean; message?: string; error?: any }> {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        return { success: false, error: { message: 'Session expired. Please log in again.' } };
-      }
+      const token = await AuthService.getAccessToken();
 
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/entry/mark`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           registration_id: registrationId,
@@ -99,12 +94,11 @@ export const EntryService = {
    */
   async getStats(): Promise<{ total_scans: number; recent_scans: any[] }> {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return { total_scans: 0, recent_scans: [] };
+      const token = await AuthService.getAccessToken();
 
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/coordinator/stats`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       });
 

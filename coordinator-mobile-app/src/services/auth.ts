@@ -44,7 +44,10 @@ export const AuthService = {
           }
         }
 
-        // Persist profile locally
+        // Persist token & profile locally
+        if (session?.access_token) {
+          await AsyncStorage.setItem(APP_CONFIG.AUTH_STORAGE_KEY, session.access_token);
+        }
         await AsyncStorage.setItem(APP_CONFIG.PROFILE_STORAGE_KEY, JSON.stringify(profile));
         return { success: true, profile };
       } else if (res.error?.message) {
@@ -63,6 +66,10 @@ export const AuthService = {
 
       if (error || !data.session) {
         return { success: false, error: error?.message || 'Invalid email or password.' };
+      }
+
+      if (data.session.access_token) {
+        await AsyncStorage.setItem(APP_CONFIG.AUTH_STORAGE_KEY, data.session.access_token);
       }
 
       // Fetch coordinator role & profile from backend
@@ -100,33 +107,46 @@ export const AuthService = {
   },
 
   /**
+   * Get active access token
+   */
+  async getAccessToken(): Promise<string | null> {
+    try {
+      const storedToken = await AsyncStorage.getItem(APP_CONFIG.AUTH_STORAGE_KEY);
+      if (storedToken) return storedToken;
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token || null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Check persistent session on app start
    */
   async getPersistedSession(): Promise<{ loggedIn: boolean; profile?: CoordinatorProfile; token?: string }> {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const storedProfileStr = await AsyncStorage.getItem(APP_CONFIG.PROFILE_STORAGE_KEY);
-
-      if (!session) {
-        return { loggedIn: false };
-      }
+      const storedToken = await AsyncStorage.getItem(APP_CONFIG.AUTH_STORAGE_KEY);
 
       if (storedProfileStr) {
         const profile: CoordinatorProfile = JSON.parse(storedProfileStr);
-        return { loggedIn: true, profile, token: session.access_token };
+        return { loggedIn: true, profile, token: storedToken || undefined };
       }
 
-      // If session exists but profile not saved, re-fetch profile
-      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/admin/profile`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/admin/profile`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
 
-      const res = await response.json();
-      if (response.ok && res.success && res.data) {
-        await AsyncStorage.setItem(APP_CONFIG.PROFILE_STORAGE_KEY, JSON.stringify(res.data));
-        return { loggedIn: true, profile: res.data, token: session.access_token };
+        const res = await response.json();
+        if (response.ok && res.success && res.data) {
+          await AsyncStorage.setItem(APP_CONFIG.PROFILE_STORAGE_KEY, JSON.stringify(res.data));
+          await AsyncStorage.setItem(APP_CONFIG.AUTH_STORAGE_KEY, session.access_token);
+          return { loggedIn: true, profile: res.data, token: session.access_token };
+        }
       }
 
       return { loggedIn: false };
@@ -142,6 +162,7 @@ export const AuthService = {
   async logout(): Promise<void> {
     try {
       await supabase.auth.signOut();
+      await AsyncStorage.removeItem(APP_CONFIG.AUTH_STORAGE_KEY);
       await AsyncStorage.removeItem(APP_CONFIG.PROFILE_STORAGE_KEY);
     } catch (e) {
       console.warn('Logout error:', e);
