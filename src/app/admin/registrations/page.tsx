@@ -26,7 +26,14 @@ import {
   Sparkles,
   CreditCard,
   Edit3,
-  Check
+  Check,
+  LayoutGrid,
+  List,
+  ExternalLink,
+  Crown,
+  School,
+  Phone,
+  MessageCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { EVENT_CONFIG } from '@/config/event';
@@ -47,7 +54,7 @@ interface RegistrationDetail {
   ticket_token: string;
   registration_number: string;
   full_name: string;
-  year: '1st Year' | '2nd Year';
+  year: '1st Year' | '2nd Year' | '3rd Year' | '4th Year' | string;
   school_name: string;
   modeling: 'Yes' | 'No';
   modeling_talent?: string | null;
@@ -82,6 +89,7 @@ export default function AdminRegistrations() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Search & Filter States
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [search, setSearch] = useState('');
   const [year, setYear] = useState('All');
   const [modeling, setModeling] = useState('All');
@@ -459,7 +467,35 @@ export default function AdminRegistrations() {
           <p className="text-slate-400 text-xs mt-1">Manage student registrants, view payment logs, and check-in statuses.</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-black/40 border border-white/10 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === 'cards'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              ID Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              Table
+            </button>
+          </div>
+
           <Link
             href="/admin/deleted"
             className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
@@ -584,20 +620,195 @@ export default function AdminRegistrations() {
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="glass-card rounded-2xl overflow-hidden mb-6 relative">
-        {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-            <p className="text-slate-400 text-xs uppercase tracking-widest font-semibold">Fetching logs...</p>
-          </div>
-        ) : list.length === 0 ? (
-          <div className="py-24 text-center">
-            <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">No Registrations Found</h3>
-            <p className="text-xs text-slate-500 mt-1">Try relaxing your search or filter inputs.</p>
-          </div>
-        ) : (
+      {/* Registrations List / Cards View or Table View */}
+      {loading ? (
+        <div className="glass-card rounded-2xl overflow-hidden mb-6 relative py-24 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+          <p className="text-slate-400 text-xs uppercase tracking-widest font-semibold">Fetching attendees...</p>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="glass-card rounded-2xl overflow-hidden mb-6 relative py-24 text-center">
+          <Users className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">No Registrations Found</h3>
+          <p className="text-xs text-slate-500 mt-1">Try relaxing your search or filter inputs.</p>
+        </div>
+      ) : viewMode === 'cards' ? (
+        /* ID Cards View - Stacked 1 below other */
+        <div className="space-y-4 mb-6">
+          {list.map((reg) => {
+            const isPaid = reg.registration_status === 'PAID';
+            const isEntered = reg.entry_status === 'ENTERED';
+            const isRefunded = (reg as any).refund_status === 'REFUNDED';
+            const isRefunding = (reg as any).refund_status === 'PROCESSING';
+
+            return (
+              <div
+                key={reg.id}
+                onClick={() => handleSelectRegistration(reg)}
+                className="group relative overflow-hidden bg-[#0c0724]/90 hover:bg-[#120a36]/95 border border-white/10 hover:border-purple-500/50 rounded-2xl p-4 sm:p-5 transition-all duration-200 shadow-xl hover:shadow-purple-500/10 cursor-pointer"
+              >
+                {/* Decorative glow */}
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-purple-500/20 transition-all" />
+
+                <div className="flex flex-col lg:flex-row gap-5 items-start lg:items-center justify-between relative z-10">
+                  {/* Left: Candidate Photo & Badges */}
+                  <div className="flex items-center sm:items-start gap-4 shrink-0">
+                    <div className="relative">
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-purple-500/40 bg-black/60 shadow-inner shrink-0 group-hover:border-purple-400 transition-colors">
+                        <img
+                          src={`/api/admin/registrations/${reg.id}/photo`}
+                          alt={reg.full_name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <span className="absolute -bottom-2 -right-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white shadow-md border border-purple-400/40">
+                        {reg.year}
+                      </span>
+                    </div>
+
+                    {/* Mobile-only visible quick tags */}
+                    <div className="flex flex-col gap-1.5 sm:hidden">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider w-fit ${
+                        isRefunded ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
+                        isRefunding ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20 animate-pulse' :
+                        isPaid ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' :
+                        reg.registration_status === 'PENDING' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                        'bg-red-500/15 text-red-400 border border-red-500/20'
+                      }`}>
+                        {isRefunded ? 'REFUNDED' : isRefunding ? 'REFUNDING' : reg.registration_status}
+                      </span>
+
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider w-fit ${
+                        isEntered ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        {isEntered ? 'Entered' : 'Not Entered'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Middle: Candidate ID details */}
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-extrabold font-outfit text-white tracking-tight group-hover:text-purple-300 transition-colors">
+                        {reg.full_name}
+                      </h3>
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold">
+                        {reg.registration_number}
+                      </span>
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold">
+                        Ticket: {reg.ticket_id ? `#${reg.ticket_id}` : 'PENDING'}
+                      </span>
+                      {reg.modeling === 'Yes' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+                          <Crown className="w-3 h-3" /> Modeling
+                        </span>
+                      )}
+                    </div>
+
+                    {/* School */}
+                    <div className="flex items-center gap-2 text-xs text-slate-300">
+                      <School className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{reg.school_name || 'School / Department Not Specified'}</span>
+                    </div>
+
+                    {/* Contacts & Timestamps */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300 pt-1.5 border-t border-white/5">
+                      {/* Phone + WhatsApp */}
+                      <div className="flex items-center gap-1.5 font-mono" onClick={(e) => e.stopPropagation()}>
+                        <Phone className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <a href={`tel:${reg.phone}`} className="hover:text-purple-300 underline-offset-2 hover:underline">
+                          {reg.phone}
+                        </a>
+                        <a
+                          href={`https://wa.me/91${reg.phone}?text=Hi%20${encodeURIComponent(reg.full_name)}%2C%20from%20Algo-Rhythm%202026%20Freshers`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-colors"
+                          title="Chat on WhatsApp"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      {/* Email */}
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <a href={`mailto:${reg.email}`} className="hover:text-purple-300 truncate max-w-[220px] underline-offset-2 hover:underline">
+                          {reg.email}
+                        </a>
+                      </div>
+
+                      {/* Registered time */}
+                      <div className="flex items-center gap-1.5 text-slate-400">
+                        <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span>Reg: {new Date(reg.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
+                      </div>
+                    </div>
+
+                    {/* Check-in Info if entered */}
+                    {isEntered && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-indigo-300 font-medium bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-lg w-fit">
+                        <CheckCircle className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Checked-in at {reg.entry_time ? new Date(reg.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown'}</span>
+                        {reg.entry_scanned_by && <span className="text-slate-400">&bull; Scanned by {reg.entry_scanned_by}</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Status Badges & Quick Action Buttons */}
+                  <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between w-full lg:w-auto gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        isRefunded ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
+                        isRefunding ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20 animate-pulse' :
+                        isPaid ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' :
+                        reg.registration_status === 'PENDING' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                        'bg-red-500/15 text-red-400 border border-red-500/20'
+                      }`}>
+                        {isRefunded ? 'REFUNDED' : isRefunding ? 'REFUNDING' : reg.registration_status}
+                      </span>
+
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        isEntered ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        {isEntered ? 'Entered' : 'Not Entered'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {reg.ticket_token && isPaid && (
+                        <Link
+                          href={`/ticket/${reg.ticket_token}`}
+                          target="_blank"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 text-xs font-bold transition-all"
+                          title="Open Candidate Ticket in new tab"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Ticket
+                        </Link>
+                      )}
+
+                      <button
+                        onClick={() => handleSelectRegistration(reg)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        title="Inspect attendee details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Inspect
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Table View */
+        <div className="glass-card rounded-2xl overflow-hidden mb-6 relative">
           <div className="overflow-x-auto max-w-full">
             <table className="w-full text-left border-collapse text-xs text-slate-300">
               
@@ -721,8 +932,8 @@ export default function AdminRegistrations() {
 
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Pagination controls */}
       {!loading && list.length > 0 && (
