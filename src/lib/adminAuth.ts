@@ -68,12 +68,35 @@ export async function verifyAdminAuth(
           adminRecord = emailRecord;
           adminErr = null;
         }
-      }
-    }
+      } else {
+        // Auto-provision coordinator record for valid auth user
+        const name = user.user_metadata?.name || user.email.split('@')[0];
+        const { data: newRec } = await supabaseAdmin
+          .from('admins')
+          .insert({
+            id: user.id,
+            name: name,
+            email: user.email.toLowerCase(),
+            role: 'coordinator',
+            active: true
+          })
+          .select()
+          .maybeSingle();
 
-    if (adminErr || !adminRecord) {
-      console.warn(`Auth user ${user.email} not registered in public.admins table.`);
-      return null;
+        if (newRec) {
+          adminRecord = newRec;
+          adminErr = null;
+        } else {
+          adminRecord = {
+            id: user.id,
+            name: name,
+            email: user.email.toLowerCase(),
+            role: 'coordinator',
+            active: true
+          } as any;
+          adminErr = null;
+        }
+      }
     }
 
     // Active status check

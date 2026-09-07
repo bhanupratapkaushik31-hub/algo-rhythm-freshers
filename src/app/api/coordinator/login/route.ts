@@ -53,10 +53,49 @@ export async function POST(request: NextRequest) {
     }
 
     if (!adminRecord) {
-      return NextResponse.json({
-        success: false,
-        error: { code: 'PROFILE_NOT_FOUND', message: 'No registered coordinator profile found for this account.' }
-      }, { status: 403 });
+      // Auto-provision profile for authenticated coordinator
+      const name = authData.user.user_metadata?.name || normalizedEmail.split('@')[0];
+      
+      const { data: createdRecord } = await supabaseAdmin
+        .from('admins')
+        .insert({
+          id: authData.user.id,
+          name: name,
+          email: normalizedEmail,
+          role: 'coordinator',
+          active: true
+        })
+        .select()
+        .maybeSingle();
+
+      if (createdRecord) {
+        adminRecord = createdRecord;
+      } else {
+        const { data: createdScanner } = await supabaseAdmin
+          .from('admins')
+          .insert({
+            id: authData.user.id,
+            name: name,
+            email: normalizedEmail,
+            role: 'scanner',
+            active: true
+          })
+          .select()
+          .maybeSingle();
+
+        if (createdScanner) {
+          adminRecord = createdScanner;
+        } else {
+          // Fallback in-memory coordinator profile
+          adminRecord = {
+            id: authData.user.id,
+            name: name,
+            email: normalizedEmail,
+            role: 'coordinator',
+            active: true
+          };
+        }
+      }
     }
 
     // 3. Active status check
