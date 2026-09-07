@@ -120,8 +120,10 @@ export const EVENT_CONFIG = {
     const basePaise = is2ndYear ? 20000 : 10000;
 
     if (is2ndYear) {
-      const couponCheck = EVENT_CONFIG.validateCoupon(couponCode, '2nd Year');
-      if (couponCheck.valid) {
+      // For 2nd year students, ALGO50 coupon is applied by default (giving ₹50 discount -> ₹150)
+      // unless explicitly set to 'NONE' or 'NO_COUPON'
+      const isExplicitlyDisabled = couponCode === 'NONE' || couponCode === 'NO_COUPON';
+      if (!isExplicitlyDisabled) {
         return {
           baseInr,
           basePaise,

@@ -141,7 +141,7 @@ function PaymentContent() {
         const response = await fetch('/api/payment/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registration_id: registrationId }),
+          body: JSON.stringify({ registration_id: registrationId, coupon_code: 'ALGO50' }),
         });
 
         const res = await response.json();
