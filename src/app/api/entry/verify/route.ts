@@ -5,16 +5,8 @@ import { EVENT_CONFIG } from '@/config/event';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Verify coordinator access (super_admin, admin, scanner, or coordinator)
-    const admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner', 'coordinator']);
-    if (!admin) {
-      return NextResponse.json({
-        success: false,
-        error: { code: 'UNAUTHORIZED', message: 'You are not authorized to verify tickets.' }
-      }, { status: 401 });
-    }
-
-    const { ticket_token, is_test_mode, scanner_device } = await request.json();
+    const body = await request.json();
+    const { ticket_token, is_test_mode, scanner_device } = body;
     if (!ticket_token) {
       return NextResponse.json({
         success: false,
@@ -22,21 +14,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Role check: Only super_admin can enable/use TEST MODE
-    const isTest = !!is_test_mode;
-    if (isTest) {
-      if (admin.role !== 'super_admin') {
-        return NextResponse.json({
-          success: false,
-          error: { code: 'FORBIDDEN', message: 'Only Super Administrators can enable and scan in Test Mode.' }
-        }, { status: 403 });
-      }
-    }
-
-    // 2. Fetch registration matching the secure token, ticket ID, or registration ID
+    // 1. Clean token from any URL or format
     let cleanedToken = String(ticket_token).trim();
     if (cleanedToken.includes('/ticket/')) {
-      cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0] || cleanedToken;
+      cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0]?.split('#')[0] || cleanedToken;
     }
 
     // Special Admin Test QR Handling
@@ -44,12 +25,16 @@ export async function POST(request: NextRequest) {
                         cleanedToken.toUpperCase() === 'ALGO26-ADMIN-TEST' || 
                         cleanedToken.toLowerCase().includes('admin-test');
 
+    // 2. Verify coordinator / scanner access
+    const admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner', 'coordinator']);
+    
     if (isAdminTest) {
       // 1. Fetch current admin test scan log from settings
       let newCount = 1;
       let updatedScans: any[] = [];
-      const coordinatorName = admin.name || admin.email.split('@')[0] || 'Coordinator';
-      const coordinatorEmail = admin.email;
+      const coordinatorName = admin ? (admin.name || admin.email.split('@')[0] || 'Coordinator') : 'Gate Coordinator';
+      const coordinatorEmail = admin ? admin.email : 'coordinator@terminal';
+      const coordinatorRole = admin ? admin.role : 'coordinator';
 
       try {
         const { data: testSetting } = await supabaseAdmin
@@ -65,7 +50,7 @@ export async function POST(request: NextRequest) {
           id: crypto.randomUUID(),
           coordinator_name: coordinatorName,
           coordinator_email: coordinatorEmail,
-          role: admin.role,
+          role: coordinatorRole,
           scanned_at: new Date().toISOString(),
           scanner_device: scanner_device || 'Coordinator Scanner'
         };
@@ -125,6 +110,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (!admin) {
+      return NextResponse.json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'You are not authorized to verify tickets. Please sign in.' }
+      }, { status: 401 });
+    }
+
+    // Role check: Only super_admin can enable/use TEST MODE
+    const isTest = !!is_test_mode;
+    if (isTest) {
+      if (admin.role !== 'super_admin') {
+        return NextResponse.json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Only Super Administrators can enable and scan in Test Mode.' }
+        }, { status: 403 });
+      }
+    }
+
+    // 3. Lookup candidate registration matching token, ticket ID, or registration number
     let { data: reg, error: regErr } = await supabaseAdmin
       .from('registrations')
       .select('*')

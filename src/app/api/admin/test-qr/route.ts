@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       ? (testSetting.value as any) 
       : { count: 0, scans: [] };
 
-    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://algo-rhythm-freshers.vercel.app';
+    const siteUrl = 'https://algo-rhythm-freshers.vercel.app';
     const qrValue = `${siteUrl}/ticket/admin-test`;
 
     return NextResponse.json({
