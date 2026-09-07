@@ -9,11 +9,9 @@ import {
   Loader2, 
   AlertTriangle, 
   ArrowLeft, 
-  CheckCircle,
-  ShieldCheck,
-  MessageCircle,
-  Tag,
-  Check
+  CheckCircle, 
+  ShieldCheck, 
+  MessageCircle 
 } from 'lucide-react';
 import Link from 'next/link';
 import { EVENT_CONFIG } from '@/config/event';
@@ -37,11 +35,6 @@ function PaymentContent() {
   const [paymentStatus, setPaymentStatus] = useState<string>('PENDING');
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900); // 15 minutes countdown
-
-  // Coupon handling on payment page
-  const [couponInput, setCouponInput] = useState<string>('ALGO50');
-  const [applyingCoupon, setApplyingCoupon] = useState<boolean>(false);
-  const [couponError, setCouponError] = useState<string | null>(null);
 
   // Helper to ensure Razorpay checkout script is loaded on-demand
   const ensureRazorpayLoaded = async (): Promise<boolean> => {
@@ -103,30 +96,6 @@ function PaymentContent() {
     }
   };
 
-  // Helper to apply or remove coupon on payment page
-  const applyOrRemoveCoupon = async (code: string | null) => {
-    if (!registrationId) return;
-    setApplyingCoupon(true);
-    setCouponError(null);
-    try {
-      const response = await fetch('/api/payment/create-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ registration_id: registrationId, coupon_code: code }),
-      });
-      const res = await response.json();
-      if (res.success && res.data) {
-        setPaymentData(res.data);
-      } else {
-        setCouponError(res.error?.message || 'Failed to update coupon.');
-      }
-    } catch (e: any) {
-      setCouponError('Network error while applying coupon.');
-    } finally {
-      setApplyingCoupon(false);
-    }
-  };
-
   // 1. Check payment status and initialize checkout on mount
   useEffect(() => {
     if (!registrationId) {
@@ -141,7 +110,7 @@ function PaymentContent() {
         const response = await fetch('/api/payment/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registration_id: registrationId, coupon_code: 'ALGO50' }),
+          body: JSON.stringify({ registration_id: registrationId }),
         });
 
         const res = await response.json();
@@ -554,46 +523,12 @@ function PaymentContent() {
 
             {/* Price detail */}
             <div className="space-y-3.5 mb-6">
-              {/* 2nd Year Auto-Applied Coupon Notice Box */}
-              {(paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125')) && (
-                <div className="p-3.5 bg-gradient-to-r from-emerald-950/40 via-purple-950/30 to-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5 font-outfit">
-                      <Tag className="w-3.5 h-3.5 text-emerald-400" /> Discount Coupon Applied
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      <Check className="w-3 h-3" />
-                      ₹50 OFF
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="font-mono text-xs font-black text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-                      ALGO50
-                    </span>
-                    <span className="text-[11px] text-slate-300">
-                      Special 2nd Year Discount (Pay <strong className="text-emerald-300">₹150</strong>)
-                    </span>
-                  </div>
-                </div>
-              )}
-
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>Base Ticket Price {paymentData.student?.year ? `(${paymentData.student.year})` : ''}</span>
                 <span className="font-semibold text-white">
-                  ₹{paymentData.pricing?.base_inr || (paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125') ? 200 : Math.round(paymentData.amount / 100))}.00
+                  ₹{Math.round(paymentData.amount / 100)}.00
                 </span>
               </div>
-
-              {/* Coupon Discount Row */}
-              {(paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125') || Math.round(paymentData.amount / 100) === 150) && (
-                <div className="flex justify-between items-center text-xs text-emerald-400 bg-emerald-950/20 border border-emerald-500/20 px-3 py-2 rounded-xl">
-                  <div className="flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5" />
-                    <span className="font-bold">Coupon Discount (ALGO50)</span>
-                  </div>
-                  <span className="font-extrabold text-emerald-300">-₹50.00</span>
-                </div>
-              )}
 
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>Gateway Service Charges</span>
@@ -602,18 +537,9 @@ function PaymentContent() {
 
               <div className="pt-3 border-t border-white/5 flex justify-between items-center">
                 <span className="text-sm font-bold text-white">Total Amount</span>
-                <div className="flex items-center gap-2">
-                  {(paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125') || Math.round(paymentData.amount / 100) === 150) && (
-                    <span className="text-base text-slate-500 line-through font-normal">₹200.00</span>
-                  )}
-                  <span className={`text-xl font-extrabold font-outfit ${
-                    (paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125') || Math.round(paymentData.amount / 100) === 150)
-                      ? 'text-emerald-300'
-                      : 'text-purple-300'
-                  }`}>
-                    ₹{Math.round(paymentData.amount / 100)}.00
-                  </span>
-                </div>
+                <span className="text-xl font-extrabold font-outfit text-purple-300">
+                  ₹{Math.round(paymentData.amount / 100)}.00
+                </span>
               </div>
             </div>
 

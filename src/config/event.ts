@@ -13,27 +13,32 @@ export const EVENT_CONFIG = {
   feesByYear: {
     '1st Year': { inr: 100, paise: 10000 },
     '2nd Year': { inr: 200, paise: 20000 },
+    '3rd Year': { inr: 200, paise: 20000 },
+    '4th Year': { inr: 200, paise: 20000 },
   } as Record<string, { inr: number; paise: number }>,
 
   /**
    * Determine academic year from registration number:
-   * Starting with 125 -> 2nd Year
    * Starting with 126 -> 1st Year
-   * Fallback -> null if neither
+   * Starting with 125 -> 2nd Year
+   * Starting with 124 -> 3rd Year
+   * Starting with 123 -> 4th Year
+   * Fallback -> null if not matched
    */
-  getYearFromRegNo: (regNo?: string | null): '1st Year' | '2nd Year' | null => {
+  getYearFromRegNo: (regNo?: string | null): '1st Year' | '2nd Year' | '3rd Year' | '4th Year' | null => {
     if (!regNo) return null;
     const clean = regNo.trim();
-    if (clean.startsWith('125')) return '2nd Year';
     if (clean.startsWith('126')) return '1st Year';
+    if (clean.startsWith('125')) return '2nd Year';
+    if (clean.startsWith('124')) return '3rd Year';
+    if (clean.startsWith('123')) return '4th Year';
     return null;
   },
 
   /**
    * Validate registration number eligibility:
    * Returns error message or null if valid.
-   * - Starts with 127 or more: "wrong registration number , contact organizing team"
-   * - Less than 125: "Only 1st year and second year is allowed in this freshers"
+   * Allowed batches: 123 (4th yr), 124 (3rd yr), 125 (2nd yr), 126 (1st yr)
    */
   getRegNoValidationError: (regNo?: string | null): string | null => {
     if (!regNo) return "Please enter your registration number.";
@@ -44,7 +49,12 @@ export const EVENT_CONFIG = {
     const prefix = clean.slice(0, 3);
     const prefixNum = parseInt(prefix, 10);
 
-    if (clean.startsWith('125') || clean.startsWith('126')) {
+    if (
+      clean.startsWith('123') || 
+      clean.startsWith('124') || 
+      clean.startsWith('125') || 
+      clean.startsWith('126')
+    ) {
       return null; // Valid!
     }
 
@@ -52,8 +62,8 @@ export const EVENT_CONFIG = {
       if (prefixNum >= 127) {
         return "wrong registration number , contact organizing team";
       }
-      if (prefixNum < 125) {
-        return "Only 1st year and second year is allowed in this freshers";
+      if (prefixNum < 123) {
+        return "Only 1st, 2nd, 3rd, and 4th year students are allowed in this freshers";
       }
     }
 
@@ -63,79 +73,32 @@ export const EVENT_CONFIG = {
       if (thirdChar && thirdChar >= '7') {
         return "wrong registration number , contact organizing team";
       }
-      if (thirdChar && thirdChar < '5') {
-        return "Only 1st year and second year is allowed in this freshers";
+      if (thirdChar && thirdChar < '3') {
+        return "Only 1st, 2nd, 3rd, and 4th year students are allowed in this freshers";
       }
     }
 
-    return "Only 1st year and second year is allowed in this freshers";
+    return "Only 1st, 2nd, 3rd, and 4th year students are allowed in this freshers";
   },
 
-  coupons: {
-    'ALGO50': {
-      code: 'ALGO50',
-      discountInr: 50,
-      discountPaise: 5000,
-      allowedYears: ['2nd Year'],
-      description: '₹50 OFF for 2nd Year Students (Pay ₹150 instead of ₹200)'
-    }
+  coupons: {} as Record<string, any>,
+
+  /**
+   * Normalize and validate coupon code
+   */
+  validateCoupon: (_couponCode?: string | null, _yearOrRegNo?: string | null) => {
+    return { valid: false, message: null, coupon: null };
   },
 
   /**
-   * Normalize and validate coupon code for a given academic year or reg number
+   * Get registration fee by Year or Registration Number
+   * 1st Year (126...): ₹100 (10000 paise)
+   * 2nd Year (125...), 3rd Year (124...), 4th Year (123...): ₹200 (20000 paise)
    */
-  validateCoupon: (couponCode?: string | null, yearOrRegNo?: string | null) => {
-    if (!couponCode) {
-      return { valid: false, message: null, coupon: null };
-    }
-    const clean = couponCode.trim().toUpperCase().replace(/[\s_-]+/g, '');
-    const normalized = (clean === 'ALGO50' || clean === 'ALGO-50') ? 'ALGO50' : clean;
-
-    if (normalized !== 'ALGO50') {
-      return { valid: false, message: 'Invalid coupon code.', coupon: null };
-    }
-
-    const resolvedYear = EVENT_CONFIG.getYearFromRegNo(yearOrRegNo) || (yearOrRegNo === '2nd Year' ? '2nd Year' : (yearOrRegNo === '1st Year' ? '1st Year' : null));
-    if (resolvedYear && resolvedYear !== '2nd Year') {
-      return { valid: false, message: 'Coupon ALGO50 is only valid for 2nd Year students.', coupon: null };
-    }
-
-    return {
-      valid: true,
-      message: 'Coupon ALGO50 applied! ₹50 discount active.',
-      coupon: {
-        code: 'ALGO50',
-        discountInr: 50,
-        discountPaise: 5000
-      }
-    };
-  },
-
-  /**
-   * Get registration fee by Year or Registration Number with optional coupon
-   */
-  getFeeForYear: (yearOrRegNo?: string | null, couponCode?: string | null) => {
-    const is2ndYear = yearOrRegNo === '2nd Year' || (typeof yearOrRegNo === 'string' && yearOrRegNo.trim().startsWith('125'));
-    const baseInr = is2ndYear ? 200 : 100;
-    const basePaise = is2ndYear ? 20000 : 10000;
-
-    if (is2ndYear) {
-      // For 2nd year students, ALGO50 coupon is applied by default (giving ₹50 discount -> ₹150)
-      // unless explicitly set to 'NONE' or 'NO_COUPON'
-      const isExplicitlyDisabled = couponCode === 'NONE' || couponCode === 'NO_COUPON';
-      if (!isExplicitlyDisabled) {
-        return {
-          baseInr,
-          basePaise,
-          discountInr: 50,
-          discountPaise: 5000,
-          inr: 150,
-          paise: 15000,
-          couponCode: 'ALGO50',
-          couponApplied: true
-        };
-      }
-    }
+  getFeeForYear: (yearOrRegNo?: string | null, _couponCode?: string | null) => {
+    const is1stYear = yearOrRegNo === '1st Year' || (typeof yearOrRegNo === 'string' && yearOrRegNo.trim().startsWith('126'));
+    const baseInr = is1stYear ? 100 : 200;
+    const basePaise = is1stYear ? 10000 : 20000;
 
     return {
       baseInr,

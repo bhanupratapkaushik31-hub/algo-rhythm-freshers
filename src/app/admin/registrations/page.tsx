@@ -520,6 +520,8 @@ export default function AdminRegistrations() {
               <option value="All" className="bg-[#0c0724]">All Years</option>
               <option value="1st Year" className="bg-[#0c0724]">1st Year</option>
               <option value="2nd Year" className="bg-[#0c0724]">2nd Year</option>
+              <option value="3rd Year" className="bg-[#0c0724]">3rd Year</option>
+              <option value="4th Year" className="bg-[#0c0724]">4th Year</option>
             </select>
           </div>
 

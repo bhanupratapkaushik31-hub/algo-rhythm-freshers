@@ -306,13 +306,11 @@ export default function Home() {
             </div>
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Entry Fee</h3>
             <p className="text-lg font-bold font-outfit text-amber-500 text-gradient-gold">
-              1st Year: ₹100 • 2nd Year: <span className="line-through text-slate-500 font-normal mr-1">₹200</span>₹150
+              1st Year: ₹100 • 2nd, 3rd & 4th Year: ₹200
             </p>
-            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold tracking-wide">
-              <span>🎟️ 2nd Year Coupon:</span>
-              <span className="font-mono bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-200">ALGO50</span>
-              <span>(₹50 OFF)</span>
-            </div>
+            <p className="text-xs text-slate-400 mt-2 font-medium">
+              Open for all B.Tech / BCA / MCA CSE students
+            </p>
           </motion.div>
         </motion.div>
       </section>

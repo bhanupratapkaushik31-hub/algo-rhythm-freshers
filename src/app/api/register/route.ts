@@ -130,8 +130,8 @@ export async function POST(request: NextRequest) {
         }, { status: 400 });
       }
 
-      // 0. Calculate fee & coupon
-      const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
+      // 0. Calculate standard fee (₹100 for 1st Year, ₹200 for 2nd/3rd/4th Year)
+      const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear);
 
       // If it's PENDING or CANCELLED (or unpaid), update the details and reactivate to PENDING
       const updatePayload: Record<string, any> = {
@@ -142,8 +142,8 @@ export async function POST(request: NextRequest) {
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,
-        coupon_code: feeCalculation.couponCode,
-        discount_amount: feeCalculation.discountInr,
+        coupon_code: null,
+        discount_amount: 0,
         registration_status: 'PENDING',
         updated_at: new Date().toISOString()
       };
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
 
         if (fallbackError) {
           console.error('Database fallback update error:', fallbackError);
-          updatedReg = { ...existingReg, ...barePayload, coupon_code: feeCalculation.couponCode };
+          updatedReg = { ...existingReg, ...barePayload };
         } else {
           updatedReg = fallbackData;
         }
@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Create new registration
-    const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
+    const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear);
     const ticketToken = crypto.randomBytes(24).toString('hex');
     let newReg: any = null;
 
@@ -274,8 +274,8 @@ export async function POST(request: NextRequest) {
       phone: data.phone,
       email: data.email,
       photo_path: data.photo_path,
-      coupon_code: feeCalculation.couponCode,
-      discount_amount: feeCalculation.discountInr,
+      coupon_code: null,
+      discount_amount: 0,
       ticket_token: ticketToken,
       registration_status: 'PENDING'
     };

@@ -21,7 +21,7 @@ export const registerSchema = z.object({
     .trim()
     .min(1, "Please enter your full name.")
     .max(100, "Name must be less than 100 characters."),
-  year: z.enum(['1st Year', '2nd Year']).optional(),
+  year: z.enum(['1st Year', '2nd Year', '3rd Year', '4th Year']).optional(),
   school_name: z
     .string()
     .trim()

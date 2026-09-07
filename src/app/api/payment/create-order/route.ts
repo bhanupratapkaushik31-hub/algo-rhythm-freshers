@@ -66,31 +66,13 @@ export async function POST(request: NextRequest) {
         .eq('id', registration_id);
     }
 
-    // 2. Initialize Razorpay credentials & calculate year-based fee with coupon support
+    // 2. Initialize Razorpay credentials & calculate year-based fee (₹100 for 1st Year, ₹200 for 2nd/3rd/4th Year)
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
     
-    // Determine active coupon (from request body if explicitly provided, else from reg record)
-    const activeCouponCode = coupon_code !== undefined ? coupon_code : reg.coupon_code;
-    const feeCalculation = EVENT_CONFIG.getFeeForYear(resolvedYear, activeCouponCode);
-    const amountInPaise = feeCalculation.paise; // ₹100 (1st Year), ₹150 (2nd Year with ALGO50), ₹200 (2nd Year without coupon)
-
-    // If coupon was explicitly updated in request, sync back to registration record
-    if (coupon_code !== undefined && coupon_code !== reg.coupon_code) {
-      try {
-        await supabaseAdmin
-          .from('registrations')
-          .update({
-            coupon_code: feeCalculation.couponCode,
-            discount_amount: feeCalculation.discountInr,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', reg.id);
-      } catch (couponSyncErr) {
-        console.warn('Failed to sync coupon to registration record:', couponSyncErr);
-      }
-    }
+    const feeCalculation = EVENT_CONFIG.getFeeForYear(resolvedYear);
+    const amountInPaise = feeCalculation.paise; // ₹100 (1st Year), ₹200 (2nd/3rd/4th Year)
 
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 

@@ -415,6 +415,8 @@ export default function AdminDeletedData() {
               <option value="All" className="bg-[#0e0728]">All Academic Years</option>
               <option value="1st Year" className="bg-[#0e0728]">1st Year (₹100)</option>
               <option value="2nd Year" className="bg-[#0e0728]">2nd Year (₹200)</option>
+              <option value="3rd Year" className="bg-[#0e0728]">3rd Year (₹200)</option>
+              <option value="4th Year" className="bg-[#0e0728]">4th Year (₹200)</option>
             </select>
 
             {/* Modeling Filter */}

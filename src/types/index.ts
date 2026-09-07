@@ -4,7 +4,7 @@ export interface Registration {
   ticket_token: string;
   registration_number: string;
   full_name: string;
-  year: '1st Year' | '2nd Year';
+  year: '1st Year' | '2nd Year' | '3rd Year' | '4th Year';
   school_name: string;
   modeling: 'Yes' | 'No';
   phone: string;
