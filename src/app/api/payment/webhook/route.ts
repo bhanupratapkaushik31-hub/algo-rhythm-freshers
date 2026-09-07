@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: { message: 'Registration not found. Refund initiated.' } }, { status: 400 });
       }
 
-      // Verify amount matches the rate for the student's academic year (125 -> 2nd Year ₹150 with ALGO-50 or ₹200, 126 -> 1st Year ₹100)
+      // Verify amount matches the rate for the student's academic year (125 -> 2nd Year ₹150 with ALGO50 or ₹200, 126 -> 1st Year ₹100)
       const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
       const expectedAmount = EVENT_CONFIG.getFeeForYear(resolvedYear, reg.coupon_code).paise; // ₹100, ₹150, or ₹200
       if (amount !== expectedAmount || currency !== 'INR') {

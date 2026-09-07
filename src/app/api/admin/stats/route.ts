@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
         if (paymentMap.has(reg.id)) {
           return sum + (paymentMap.get(reg.id) || 0);
         }
-        // Fallback to configured year fee (1st Year: ₹100, 2nd Year: ₹150 with ALGO-50 or ₹200)
+        // Fallback to configured year fee (1st Year: ₹100, 2nd Year: ₹150 with ALGO50 or ₹200)
         const fee = EVENT_CONFIG.getFeeForYear(reg.year || EVENT_CONFIG.getYearFromRegNo(reg.registration_number), reg.coupon_code).inr;
         return sum + fee;
       }, 0);

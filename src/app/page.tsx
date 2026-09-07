@@ -310,7 +310,7 @@ export default function Home() {
             </p>
             <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold tracking-wide">
               <span>🎟️ 2nd Year Coupon:</span>
-              <span className="font-mono bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-200">ALGO-50</span>
+              <span className="font-mono bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-200">ALGO50</span>
               <span>(₹50 OFF)</span>
             </div>
           </motion.div>

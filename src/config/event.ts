@@ -72,8 +72,8 @@ export const EVENT_CONFIG = {
   },
 
   coupons: {
-    'ALGO-50': {
-      code: 'ALGO-50',
+    'ALGO50': {
+      code: 'ALGO50',
       discountInr: 50,
       discountPaise: 5000,
       allowedYears: ['2nd Year'],
@@ -88,23 +88,23 @@ export const EVENT_CONFIG = {
     if (!couponCode) {
       return { valid: false, message: null, coupon: null };
     }
-    const clean = couponCode.trim().toUpperCase().replace(/[\s_]+/g, '-');
-    const normalized = clean === 'ALGO50' ? 'ALGO-50' : clean;
+    const clean = couponCode.trim().toUpperCase().replace(/[\s_-]+/g, '');
+    const normalized = (clean === 'ALGO50' || clean === 'ALGO-50') ? 'ALGO50' : clean;
 
-    if (normalized !== 'ALGO-50') {
+    if (normalized !== 'ALGO50') {
       return { valid: false, message: 'Invalid coupon code.', coupon: null };
     }
 
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(yearOrRegNo) || (yearOrRegNo === '2nd Year' ? '2nd Year' : (yearOrRegNo === '1st Year' ? '1st Year' : null));
     if (resolvedYear && resolvedYear !== '2nd Year') {
-      return { valid: false, message: 'Coupon ALGO-50 is only valid for 2nd Year students.', coupon: null };
+      return { valid: false, message: 'Coupon ALGO50 is only valid for 2nd Year students.', coupon: null };
     }
 
     return {
       valid: true,
-      message: 'Coupon ALGO-50 applied! ₹50 discount active.',
+      message: 'Coupon ALGO50 applied! ₹50 discount active.',
       coupon: {
-        code: 'ALGO-50',
+        code: 'ALGO50',
         discountInr: 50,
         discountPaise: 5000
       }
@@ -129,7 +129,7 @@ export const EVENT_CONFIG = {
           discountPaise: 5000,
           inr: 150,
           paise: 15000,
-          couponCode: 'ALGO-50',
+          couponCode: 'ALGO50',
           couponApplied: true
         };
       }

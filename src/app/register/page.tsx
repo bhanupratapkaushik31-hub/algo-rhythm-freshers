@@ -179,7 +179,7 @@ export default function Register() {
   });
 
   // Coupon state for 2nd Year students
-  const [couponCode, setCouponCode] = useState<string>('ALGO-50');
+  const [couponCode, setCouponCode] = useState<string>('ALGO50');
   const [couponApplied, setCouponApplied] = useState<boolean>(true);
   const [couponFeedback, setCouponFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -203,7 +203,7 @@ export default function Register() {
     }
     const res = EVENT_CONFIG.validateCoupon(code, detectedYear);
     if (res.valid) {
-      setCouponCode(res.coupon?.code || 'ALGO-50');
+      setCouponCode(res.coupon?.code || 'ALGO50');
       setCouponApplied(true);
       setCouponFeedback({ type: 'success', message: res.message || 'Coupon applied! ₹50 OFF' });
     } else {
@@ -270,7 +270,7 @@ export default function Register() {
 
       // 2. Submit registration with coupon code if applied for 2nd Year
       const resolvedYear = detectedYear || data.year || '1st Year';
-      const activeCoupon = (resolvedYear === '2nd Year' && couponApplied) ? (feeInfo.couponCode || 'ALGO-50') : null;
+      const activeCoupon = (resolvedYear === '2nd Year' && couponApplied) ? (feeInfo.couponCode || 'ALGO50') : null;
 
       console.log('[Register Flow] 4. Submitting registration data with coupon:', activeCoupon);
       const response = await fetch('/api/register', {
@@ -496,7 +496,7 @@ export default function Register() {
                   </p>
                 </div>
 
-                {/* 3b. Dedicated New Box: Discount Coupon for 2nd Year (Appears automatically with ALGO-50 applied) */}
+                {/* 3b. Dedicated New Box: Discount Coupon for 2nd Year (Appears automatically with ALGO50 applied) */}
                 <AnimatePresence>
                   {detectedYear === '2nd Year' && (
                     <motion.div
@@ -521,7 +521,7 @@ export default function Register() {
                           <div className="relative flex-1">
                             <input
                               type="text"
-                              value="ALGO-50"
+                              value="ALGO50"
                               readOnly
                               className="w-full bg-black/60 border border-emerald-500/40 rounded-xl px-4 py-2.5 text-sm font-mono font-black text-emerald-300 tracking-wider outline-none cursor-default shadow-inner"
                             />
@@ -535,7 +535,7 @@ export default function Register() {
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-500/20 text-xs">
                           <div className="space-y-0.5">
                             <p className="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
-                              <span>🎉 Coupon <strong>ALGO-50</strong> automatically applied!</span>
+                              <span>🎉 Coupon <strong>ALGO50</strong> automatically applied!</span>
                             </p>
                             <p className="text-[10px] text-slate-400">
                               ₹50 instant discount applied for 2nd Year CSE attendees.

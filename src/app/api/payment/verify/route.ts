@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Fetch student's registered details to calculate exact expected fee (125 -> 2nd Year ₹150 with ALGO-50 or ₹200, 126 -> 1st Year ₹100)
+    // Fetch student's registered details to calculate exact expected fee (125 -> 2nd Year ₹150 with ALGO50 or ₹200, 126 -> 1st Year ₹100)
     const { data: studentReg, error: regFetchError } = await supabaseAdmin
       .from('registrations')
       .select('id, registration_number, year, ticket_token, email, coupon_code')
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     // 4. Confirm amount matches configured ticket price for the student's academic year (considering coupons)
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(studentReg.registration_number) || studentReg.year || '1st Year';
     const feeInfo = EVENT_CONFIG.getFeeForYear(resolvedYear, studentReg.coupon_code);
-    const expectedPaise = feeInfo.paise; // ₹100 for 1st Year, ₹150 for 2nd Year with ALGO-50, ₹200 for 2nd Year without coupon
+    const expectedPaise = feeInfo.paise; // ₹100 for 1st Year, ₹150 for 2nd Year with ALGO50, ₹200 for 2nd Year without coupon
     if (Number(payment.amount) !== expectedPaise) {
       console.error(`[Verify Payment] Amount mismatch. Expected ${expectedPaise} for ${resolvedYear} (coupon: ${studentReg.coupon_code}), got ${payment.amount}`);
       return NextResponse.json({

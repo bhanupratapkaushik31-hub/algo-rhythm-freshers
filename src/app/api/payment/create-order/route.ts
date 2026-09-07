@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     // Determine active coupon (from request body if explicitly provided, else from reg record)
     const activeCouponCode = coupon_code !== undefined ? coupon_code : reg.coupon_code;
     const feeCalculation = EVENT_CONFIG.getFeeForYear(resolvedYear, activeCouponCode);
-    const amountInPaise = feeCalculation.paise; // ₹100 (1st Year), ₹150 (2nd Year with ALGO-50), ₹200 (2nd Year without coupon)
+    const amountInPaise = feeCalculation.paise; // ₹100 (1st Year), ₹150 (2nd Year with ALGO50), ₹200 (2nd Year without coupon)
 
     // If coupon was explicitly updated in request, sync back to registration record
     if (coupon_code !== undefined && coupon_code !== reg.coupon_code) {
