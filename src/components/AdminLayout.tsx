@@ -168,6 +168,12 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
       roles: ['super_admin', 'admin'],
     },
     {
+      name: 'Test QR Code',
+      href: '/admin/test-qr',
+      icon: ScanQrCode,
+      roles: ['super_admin', 'admin'],
+    },
+    {
       name: 'QR Scanner',
       href: '/admin/scanner',
       icon: ScanQrCode,

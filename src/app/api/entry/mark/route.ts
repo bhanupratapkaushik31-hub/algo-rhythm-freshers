@@ -21,6 +21,18 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    if (registration_id === 'admin-test-id' || registration_id === 'admin-test') {
+      return NextResponse.json({
+        success: true,
+        data: {
+          message: 'Scanned admin - test successfull',
+          ticket_id: 'TEST-SUCCESS',
+          action: 'ENTRY',
+          entry: { registration_id: 'admin-test-id', entry_time: new Date().toISOString() }
+        }
+      });
+    }
+
     const markAction = action || 'ENTRY'; // default to ENTRY
     const isTest = !!is_test;
 

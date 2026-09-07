@@ -39,6 +39,92 @@ export async function POST(request: NextRequest) {
       cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0] || cleanedToken;
     }
 
+    // Special Admin Test QR Handling
+    const isAdminTest = cleanedToken.toLowerCase() === 'admin-test' || 
+                        cleanedToken.toUpperCase() === 'ALGO26-ADMIN-TEST' || 
+                        cleanedToken.toLowerCase().includes('admin-test');
+
+    if (isAdminTest) {
+      // 1. Fetch current admin test scan log from settings
+      let newCount = 1;
+      let updatedScans: any[] = [];
+      const coordinatorName = admin.name || admin.email.split('@')[0] || 'Coordinator';
+      const coordinatorEmail = admin.email;
+
+      try {
+        const { data: testSetting } = await supabaseAdmin
+          .from('settings')
+          .select('value')
+          .eq('key', 'admin_test_qr_scans')
+          .maybeSingle();
+
+        const currentVal = testSetting?.value && typeof testSetting.value === 'object' ? (testSetting.value as any) : { count: 0, scans: [] };
+        newCount = (Number(currentVal.count) || 0) + 1;
+
+        const newScanEntry = {
+          id: crypto.randomUUID(),
+          coordinator_name: coordinatorName,
+          coordinator_email: coordinatorEmail,
+          role: admin.role,
+          scanned_at: new Date().toISOString(),
+          scanner_device: scanner_device || 'Coordinator Scanner'
+        };
+
+        updatedScans = [newScanEntry, ...(Array.isArray(currentVal.scans) ? currentVal.scans : [])].slice(0, 500);
+
+        await supabaseAdmin
+          .from('settings')
+          .upsert({
+            key: 'admin_test_qr_scans',
+            value: {
+              count: newCount,
+              scans: updatedScans
+            },
+            updated_at: new Date().toISOString()
+          });
+      } catch (logErr) {
+        console.warn('Admin test scan log error:', logErr);
+      }
+
+      const studentData = {
+        id: 'admin-test-id',
+        ticket_id: 'ALGO26-ADMIN-TEST',
+        ticket_token: 'admin-test',
+        full_name: 'Coordinator - Scanned admin - test successfull',
+        registration_number: 'ADMIN-TEST-QR',
+        year: '4th Year' as const,
+        school_name: 'School of Computing and Artificial Intelligence',
+        modeling: 'Yes' as const,
+        registration_status: 'PAID',
+        entry_status: 'ENTERED',
+        photo_url: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'><circle cx='12' cy='8' r='4'/><path d='M12 14c-6.1 0-8 4-8 4v2h16v-2s-1.9-4-8-4z'/></svg>"
+      };
+
+      const entryDetailsData = {
+        first_scanned_at: new Date().toISOString(),
+        scanned_at: new Date().toISOString(),
+        entry_time: new Date().toISOString(),
+        scanned_by: coordinatorName,
+        total_entries: newCount,
+        scanner_device: scanner_device || 'Coordinator Scanner'
+      };
+
+      return NextResponse.json({
+        success: true,
+        status: 'MARKED',
+        message: 'Scanned admin - test successfull',
+        data: {
+          status: 'MARKED',
+          message: 'Scanned admin - test successfull',
+          student: studentData,
+          entry_details: entryDetailsData,
+          is_test: true
+        },
+        student: studentData,
+        entry_details: entryDetailsData
+      });
+    }
+
     let { data: reg, error: regErr } = await supabaseAdmin
       .from('registrations')
       .select('*')

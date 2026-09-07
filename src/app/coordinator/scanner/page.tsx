@@ -256,7 +256,13 @@ export default function CoordinatorScanner() {
       setEntryDetails(resultData.entry_details);
       setIsTestModeScanned(!!resultData.is_test);
 
-      if (resultData.status === 'ALREADY_ENTERED') {
+      if (resultData.status === 'MARKED' || res.status === 'MARKED') {
+        triggerHaptic([80, 50, 80]);
+        playBeep('success');
+        setScanState('MARKED');
+        fetchMyStats();
+        setTimeout(resetScanner, 3500);
+      } else if (resultData.status === 'ALREADY_ENTERED') {
         triggerHaptic([150, 100, 150]);
         playBeep('already');
         setScanState('ALREADY_ENTERED');
