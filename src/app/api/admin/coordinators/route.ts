@@ -119,42 +119,142 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 2. Create Auth User in Supabase Auth
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 2. Create or fetch Auth User in Supabase Auth
+    let authUserId: string | null = null;
+    let isNewAuthUser = false;
+
     const { data: authUser, error: authErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true
     });
 
-    if (authErr || !authUser.user) {
-      console.error('Create auth user error:', authErr);
+    if (authUser?.user?.id) {
+      authUserId = authUser.user.id;
+      isNewAuthUser = true;
+    } else if (authErr) {
+      console.warn('Create auth user note:', authErr.message);
+      // Check if user already exists in auth.users by listing or updating
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+      const existingAuth = listData?.users?.find((u: any) => u.email?.toLowerCase() === normalizedEmail);
+      
+      if (existingAuth) {
+        authUserId = existingAuth.id;
+        // Update password for existing auth user
+        await supabaseAdmin.auth.admin.updateUserById(existingAuth.id, { password, email_confirm: true });
+      } else {
+        return NextResponse.json({
+          success: false,
+          error: { code: 'AUTH_CREATION_FAILED', message: authErr.message || 'Failed to register authentication credentials.' }
+        }, { status: 400 });
+      }
+    }
+
+    if (!authUserId) {
       return NextResponse.json({
         success: false,
-        error: { code: 'AUTH_CREATION_FAILED', message: authErr?.message || 'Failed to register authentication credentials.' }
+        error: { code: 'AUTH_CREATION_FAILED', message: 'Unable to resolve authentication user identifier.' }
       }, { status: 400 });
     }
 
-    // 3. Create Admin profile in admins table
-    const { data: newProfile, error: profileErr } = await supabaseAdmin
-      .from('admins')
-      .insert({
-        id: authUser.user.id,
-        name,
-        email,
-        role: 'scanner',
-        active: true
-      })
-      .select()
-      .single();
+    // 3. Create or update Admin profile in admins table with fallback role handling
+    let newProfile: any = null;
+    let profileError: any = null;
 
-    if (profileErr) {
-      console.error('Create admin profile error, rolling back auth user:', profileErr);
-      // Rollback authentication user
-      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
-      
+    // Attempt 1: role = 'coordinator' with ID
+    const { data: p1, error: err1 } = await supabaseAdmin
+      .from('admins')
+      .upsert({
+        id: authUserId,
+        name: name.trim(),
+        email: normalizedEmail,
+        role: 'coordinator',
+        active: true,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'email' })
+      .select()
+      .maybeSingle();
+
+    if (!err1 && p1) {
+      newProfile = p1;
+    } else {
+      console.warn('Attempt 1 (coordinator role) error:', err1?.message);
+
+      // Attempt 2: role = 'scanner' with ID
+      const { data: p2, error: err2 } = await supabaseAdmin
+        .from('admins')
+        .upsert({
+          id: authUserId,
+          name: name.trim(),
+          email: normalizedEmail,
+          role: 'scanner',
+          active: true,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'email' })
+        .select()
+        .maybeSingle();
+
+      if (!err2 && p2) {
+        newProfile = p2;
+      } else {
+        console.warn('Attempt 2 (scanner role) error:', err2?.message);
+
+        // Attempt 3: insert without onConflict
+        const { data: p3, error: err3 } = await supabaseAdmin
+          .from('admins')
+          .insert({
+            id: authUserId,
+            name: name.trim(),
+            email: normalizedEmail,
+            role: 'coordinator',
+            active: true
+          })
+          .select()
+          .maybeSingle();
+
+        if (!err3 && p3) {
+          newProfile = p3;
+        } else {
+          // Attempt 4: insert with scanner role without onConflict
+          const { data: p4, error: err4 } = await supabaseAdmin
+            .from('admins')
+            .insert({
+              id: authUserId,
+              name: name.trim(),
+              email: normalizedEmail,
+              role: 'scanner',
+              active: true
+            })
+            .select()
+            .maybeSingle();
+
+          if (!err4 && p4) {
+            newProfile = p4;
+          } else {
+            profileError = err4 || err3 || err2 || err1;
+          }
+        }
+      }
+    }
+
+    if (profileError && !newProfile) {
+      console.error('Create admin profile failed completely:', profileError);
+      if (isNewAuthUser && authUserId) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
+        } catch (delErr) {
+          console.warn('Rollback deleteUser failed:', delErr);
+        }
+      }
+
       return NextResponse.json({
         success: false,
-        error: { code: 'PROFILE_CREATION_FAILED', message: 'Failed to save profile in admins table.' }
+        error: { 
+          code: 'PROFILE_CREATION_FAILED', 
+          message: `Failed to save profile in admins table: ${profileError.message || profileError.details || 'Database constraint violation'}` 
+        }
       }, { status: 500 });
     }
 
