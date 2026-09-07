@@ -29,6 +29,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import Link from 'next/link';
+import { EVENT_CONFIG } from '@/config/event';
 
 interface EntryLog {
   id: string;
@@ -68,6 +69,8 @@ interface RegistrationDetail {
   email_sent_at: string | null;
   photo_path?: string | null;
   photo_url?: string | null;
+  coupon_code?: string | null;
+  discount_amount?: number | null;
   entry_logs?: EntryLog[];
 }
 
@@ -195,7 +198,7 @@ export default function AdminDeletedData() {
 
   // 2. Mark as Paid & Restore back to active registrations
   const handleMarkAsPaid = async (reg: RegistrationDetail) => {
-    const feeInr = reg.year === '2nd Year' ? 200 : 100;
+    const feeInr = EVENT_CONFIG.getFeeForYear(reg.year, reg.coupon_code).inr;
     const confirmMsg = `Are you sure you want to mark this attendee as PAID and restore them?\n\n` +
       `• Student: ${reg.full_name} (${reg.registration_number})\n` +
       `• Year & Fee: ${reg.year} (₹${feeInr})\n` +

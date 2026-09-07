@@ -13,6 +13,8 @@ export interface Registration {
   email_sent: boolean;
   email_status?: 'PENDING' | 'SENT' | 'FAILED';
   email_error?: string | null;
+  coupon_code?: string | null;
+  discount_amount?: number | null;
   created_at: string;
   updated_at: string;
 }

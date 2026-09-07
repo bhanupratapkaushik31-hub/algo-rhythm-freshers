@@ -128,7 +128,9 @@ export async function POST(request: NextRequest) {
             message: 'An account/ticket already exists for this registration number. If you have already completed payment, please use your existing ticket.'
           }
         }, { status: 400 });
-      } else {
+        // 0. Calculate fee & coupon
+        const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
+
         // If it's PENDING or CANCELLED (or unpaid), update the details and reactivate to PENDING
         const updatePayload: Record<string, any> = {
           full_name: data.full_name,
@@ -138,6 +140,8 @@ export async function POST(request: NextRequest) {
           phone: data.phone,
           email: data.email,
           photo_path: data.photo_path,
+          coupon_code: feeCalculation.couponCode,
+          discount_amount: feeCalculation.discountInr,
           registration_status: 'PENDING',
           updated_at: new Date().toISOString()
         };
@@ -199,7 +203,7 @@ export async function POST(request: NextRequest) {
           if (fallbackError) {
             console.error('Database fallback update error:', fallbackError);
             // If even bare update fails, fall back to existing record so student is never stuck
-            updatedReg = { ...existingReg, ...barePayload };
+            updatedReg = { ...existingReg, ...barePayload, coupon_code: feeCalculation.couponCode };
           } else {
             updatedReg = fallbackData;
           }
@@ -213,7 +217,7 @@ export async function POST(request: NextRequest) {
 
         // Ensure payment record exists and is set to PENDING with matching year fee (re-enabling failed/cancelled sessions)
         try {
-          const feePaise = EVENT_CONFIG.getFeeForYear(updatedReg.year || computedYear).paise;
+          const feePaise = feeCalculation.paise;
           const { data: existingPays } = await supabaseAdmin
             .from('payments')
             .select('id, amount, payment_status')
@@ -256,6 +260,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Create new registration
+    const feeCalculation = EVENT_CONFIG.getFeeForYear(computedYear, data.coupon_code);
     const ticketToken = crypto.randomBytes(24).toString('hex');
     const { data: newReg, error: insertError } = await supabaseAdmin
       .from('registrations')
@@ -269,6 +274,8 @@ export async function POST(request: NextRequest) {
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,
+        coupon_code: feeCalculation.couponCode,
+        discount_amount: feeCalculation.discountInr,
         ticket_token: ticketToken,
         registration_status: 'PENDING'
       })
@@ -296,9 +303,9 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Initialize payment record as PENDING with fee matching student's year
+    // Initialize payment record as PENDING with fee matching student's year and coupon
     try {
-      const initialFeePaise = EVENT_CONFIG.getFeeForYear(newReg.year).paise;
+      const initialFeePaise = feeCalculation.paise;
       await supabaseAdmin
         .from('payments')
         .insert({

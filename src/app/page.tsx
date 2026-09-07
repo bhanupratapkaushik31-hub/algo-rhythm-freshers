@@ -305,8 +305,14 @@ export default function Home() {
               <CreditCard className="w-8 h-8" />
             </div>
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Entry Fee</h3>
-            <p className="text-lg font-bold font-outfit text-amber-500 text-gradient-gold">₹100 / ₹200</p>
-            <span className="text-[10px] text-amber-500/80 font-medium tracking-wide uppercase mt-1">1st Year: ₹100 • 2nd Year: ₹200</span>
+            <p className="text-lg font-bold font-outfit text-amber-500 text-gradient-gold">
+              1st Year: ₹100 • 2nd Year: <span className="line-through text-slate-500 font-normal mr-1">₹200</span>₹150
+            </p>
+            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold tracking-wide">
+              <span>🎟️ 2nd Year Coupon:</span>
+              <span className="font-mono bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-200">ALGO-50</span>
+              <span>(₹50 OFF)</span>
+            </div>
           </motion.div>
         </motion.div>
       </section>

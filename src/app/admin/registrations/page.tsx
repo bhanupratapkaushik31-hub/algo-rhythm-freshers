@@ -29,6 +29,7 @@ import {
   Check
 } from 'lucide-react';
 import Link from 'next/link';
+import { EVENT_CONFIG } from '@/config/event';
 
 interface EntryLog {
   id: string;
@@ -66,6 +67,8 @@ interface RegistrationDetail {
   email_sent_at: string | null;
   photo_path?: string | null;
   photo_url?: string | null;
+  coupon_code?: string | null;
+  discount_amount?: number | null;
   entry_logs?: EntryLog[];
 }
 
@@ -151,7 +154,7 @@ export default function AdminRegistrations() {
   };
 
   const handleMarkAsPaid = async (reg: RegistrationDetail) => {
-    const feeInr = reg.year === '2nd Year' ? 200 : 100;
+    const feeInr = EVENT_CONFIG.getFeeForYear(reg.year, reg.coupon_code).inr;
     const confirmMsg = `Mark ${reg.full_name} (${reg.registration_number}) as PAID?\n\n` +
       `• Year & Fee: ${reg.year} (₹${feeInr})\n` +
       `• Email: ${reg.email}\n\n` +

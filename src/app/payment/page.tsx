@@ -11,7 +11,9 @@ import {
   ArrowLeft, 
   CheckCircle,
   ShieldCheck,
-  MessageCircle
+  MessageCircle,
+  Tag,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 import { EVENT_CONFIG } from '@/config/event';
@@ -35,6 +37,11 @@ function PaymentContent() {
   const [paymentStatus, setPaymentStatus] = useState<string>('PENDING');
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900); // 15 minutes countdown
+
+  // Coupon handling on payment page
+  const [couponInput, setCouponInput] = useState<string>('ALGO-50');
+  const [applyingCoupon, setApplyingCoupon] = useState<boolean>(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   // Helper to ensure Razorpay checkout script is loaded on-demand
   const ensureRazorpayLoaded = async (): Promise<boolean> => {
@@ -93,6 +100,30 @@ function PaymentContent() {
       });
     } catch (e) {
       console.warn('Payment cancellation request warning:', e);
+    }
+  };
+
+  // Helper to apply or remove coupon on payment page
+  const applyOrRemoveCoupon = async (code: string | null) => {
+    if (!registrationId) return;
+    setApplyingCoupon(true);
+    setCouponError(null);
+    try {
+      const response = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration_id: registrationId, coupon_code: code }),
+      });
+      const res = await response.json();
+      if (res.success && res.data) {
+        setPaymentData(res.data);
+      } else {
+        setCouponError(res.error?.message || 'Failed to update coupon.');
+      }
+    } catch (e: any) {
+      setCouponError('Network error while applying coupon.');
+    } finally {
+      setApplyingCoupon(false);
     }
   };
 
@@ -522,18 +553,90 @@ function PaymentContent() {
             </div>
 
             {/* Price detail */}
-            <div className="space-y-4 mb-8">
+            <div className="space-y-3.5 mb-6">
               <div className="flex justify-between items-center text-xs text-slate-400">
-                <span>Fresher Party Entry Ticket {paymentData.student?.year ? `(${paymentData.student.year})` : ''}</span>
-                <span className="font-semibold text-white">₹{Math.round(paymentData.amount / 100)}.00</span>
+                <span>Base Ticket Price {paymentData.student?.year ? `(${paymentData.student.year})` : ''}</span>
+                <span className="font-semibold text-white">
+                  ₹{paymentData.pricing?.base_inr || (paymentData.student?.year === '2nd Year' ? 200 : Math.round(paymentData.amount / 100))}.00
+                </span>
               </div>
+
+              {/* Coupon Discount Row if applied */}
+              {((paymentData.pricing?.coupon_applied) || (paymentData.student?.year === '2nd Year' && Math.round(paymentData.amount / 100) === 150)) && (
+                <div className="flex justify-between items-center text-xs text-emerald-400 bg-emerald-950/25 border border-emerald-500/30 px-3 py-2 rounded-xl">
+                  <div className="flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span className="font-bold">Discount Coupon (ALGO-50)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold">-₹50.00</span>
+                    <button
+                      type="button"
+                      disabled={applyingCoupon}
+                      onClick={() => applyOrRemoveCoupon(null)}
+                      className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase underline cursor-pointer disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Option to apply coupon if 2nd Year and not applied yet */}
+              {(paymentData.student?.year === '2nd Year' || paymentData.student?.registration_number?.startsWith('125')) &&
+                !paymentData.pricing?.coupon_applied &&
+                Math.round(paymentData.amount / 100) === 200 && (
+                  <div className="p-3 bg-gradient-to-r from-emerald-950/40 via-purple-950/30 to-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-emerald-300 font-bold flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5" /> 2nd Year Coupon Available!
+                      </span>
+                      <span className="text-[10px] text-emerald-300 font-black bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                        SAVE ₹50
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                        placeholder="ALGO-50"
+                        className="flex-1 bg-black/40 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white uppercase font-mono outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        disabled={applyingCoupon}
+                        onClick={() => applyOrRemoveCoupon(couponInput)}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                      >
+                        {applyingCoupon ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Apply'}
+                      </button>
+                    </div>
+                    {couponError && (
+                      <p className="text-[10px] text-red-400 font-semibold">{couponError}</p>
+                    )}
+                  </div>
+                )}
+
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>Gateway Service Charges</span>
                 <span className="font-semibold text-emerald-400">FREE</span>
               </div>
-              <div className="pt-4 border-t border-white/5 flex justify-between items-center">
+
+              <div className="pt-3 border-t border-white/5 flex justify-between items-center">
                 <span className="text-sm font-bold text-white">Total Amount</span>
-                <span className="text-xl font-bold font-outfit text-purple-300">₹{Math.round(paymentData.amount / 100)}.00</span>
+                <div className="flex items-center gap-2">
+                  {((paymentData.pricing?.coupon_applied) || (paymentData.student?.year === '2nd Year' && Math.round(paymentData.amount / 100) === 150)) && (
+                    <span className="text-base text-slate-500 line-through font-normal">₹200.00</span>
+                  )}
+                  <span className={`text-xl font-extrabold font-outfit ${
+                    ((paymentData.pricing?.coupon_applied) || (paymentData.student?.year === '2nd Year' && Math.round(paymentData.amount / 100) === 150))
+                      ? 'text-emerald-300'
+                      : 'text-purple-300'
+                  }`}>
+                    ₹{Math.round(paymentData.amount / 100)}.00
+                  </span>
+                </div>
               </div>
             </div>
 

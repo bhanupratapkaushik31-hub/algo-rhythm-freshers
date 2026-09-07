@@ -16,7 +16,9 @@ import {
   Loader2, 
   AlertTriangle,
   CheckCircle2,
-  FileText
+  FileText,
+  Tag,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 import { registerSchema, RegisterInput } from '@/lib/schemas';
@@ -176,12 +178,44 @@ export default function Register() {
     }
   });
 
+  // Coupon state for 2nd Year students
+  const [couponCode, setCouponCode] = useState<string>('ALGO-50');
+  const [couponApplied, setCouponApplied] = useState<boolean>(true);
+  const [couponFeedback, setCouponFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   // Watch the modeling field to conditionally show/hide the talent field
   const modelingValue = watch('modeling');
   // Watch the registration number to automatically detect year, fee, and validate eligibility
   const regNumberValue = watch('registration_number') || '';
   const detectedYear = EVENT_CONFIG.getYearFromRegNo(regNumberValue);
-  const selectedYearFee = EVENT_CONFIG.getFeeForYear(regNumberValue).inr;
+
+  // Calculate fee considering 2nd Year coupon
+  const effectiveCoupon = (detectedYear === '2nd Year' && couponApplied) ? couponCode : null;
+  const feeInfo = EVENT_CONFIG.getFeeForYear(regNumberValue, effectiveCoupon);
+  const selectedYearFee = feeInfo.inr;
+
+  const handleApplyCoupon = (codeToApply?: string) => {
+    const code = (codeToApply ?? couponCode).trim();
+    if (!code) {
+      setCouponFeedback({ type: 'error', message: 'Please enter a coupon code.' });
+      setCouponApplied(false);
+      return;
+    }
+    const res = EVENT_CONFIG.validateCoupon(code, detectedYear);
+    if (res.valid) {
+      setCouponCode(res.coupon?.code || 'ALGO-50');
+      setCouponApplied(true);
+      setCouponFeedback({ type: 'success', message: res.message || 'Coupon applied! ₹50 OFF' });
+    } else {
+      setCouponApplied(false);
+      setCouponFeedback({ type: 'error', message: res.message || 'Invalid coupon code.' });
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponApplied(false);
+    setCouponFeedback({ type: 'error', message: 'Coupon removed. Regular fee (₹200) applies.' });
+  };
   
   // Real-time validation message for registration number eligibility
   const regNoValidationError = regNumberValue.trim().length >= 3 
@@ -234,15 +268,19 @@ export default function Register() {
 
       const photoPath = uploadRes.data.photo_path;
 
-      // 2. Submit registration
-      console.log('[Register Flow] 4. Submitting registration data...');
+      // 2. Submit registration with coupon code if applied for 2nd Year
+      const resolvedYear = detectedYear || data.year || '1st Year';
+      const activeCoupon = (resolvedYear === '2nd Year' && couponApplied) ? (feeInfo.couponCode || 'ALGO-50') : null;
+
+      console.log('[Register Flow] 4. Submitting registration data with coupon:', activeCoupon);
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
-          year: detectedYear || data.year || '1st Year',
-          photo_path: photoPath
+          year: resolvedYear,
+          photo_path: photoPath,
+          coupon_code: activeCoupon
         }),
       });
 
@@ -420,8 +458,8 @@ export default function Register() {
                 </div>
 
                 {/* 3. Automatic Year & Fee Detection */}
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Academic Year</label>
+                <div className="space-y-3">
+                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Academic Year & Ticket Fee</label>
                   <div className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 flex justify-between items-center text-sm">
                     {detectedYear ? (
                       <div className="flex items-center gap-2">
@@ -436,16 +474,106 @@ export default function Register() {
                       </span>
                     )}
 
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                      detectedYear 
-                        ? 'text-purple-300 bg-purple-950/40 border-purple-500/30' 
-                        : 'text-slate-500 bg-white/5 border-white/5'
-                    }`}>
-                      {detectedYear ? `₹${selectedYearFee}` : '₹100 / ₹200'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {detectedYear === '2nd Year' ? (
+                        couponApplied ? (
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/40">
+                            <span className="line-through text-slate-500 text-xs font-normal">₹200</span>
+                            <span className="text-xs font-black text-emerald-300 font-outfit">₹150</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-bold px-3 py-1 rounded-full border text-purple-300 bg-purple-950/40 border-purple-500/30">
+                            ₹200
+                          </span>
+                        )
+                      ) : (
+                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                          detectedYear 
+                            ? 'text-purple-300 bg-purple-950/40 border-purple-500/30' 
+                            : 'text-slate-500 bg-white/5 border-white/5'
+                        }`}>
+                          {detectedYear ? `₹${selectedYearFee}` : '₹100 / ₹200'}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* 2nd Year Exclusive Discount Coupon Box */}
+                  {detectedYear === '2nd Year' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3.5 bg-gradient-to-r from-emerald-950/40 via-purple-950/30 to-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-xs font-bold text-emerald-300 font-outfit">2nd Year Discount Coupon</span>
+                        </div>
+                        {couponApplied && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            <Check className="w-3 h-3" />
+                            SAVE ₹50
+                          </span>
+                        )}
+                      </div>
+
+                      {couponApplied ? (
+                        <div className="flex items-center justify-between bg-black/40 border border-emerald-500/30 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-black text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                              ALGO-50
+                            </span>
+                            <span className="text-[11px] text-slate-300">
+                              ₹50 OFF applied (<span className="line-through text-slate-500">₹200</span> <strong className="text-emerald-300">₹150</strong>)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRemoveCoupon}
+                            className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-wider underline cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={couponCode}
+                              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                              placeholder="Enter coupon (e.g. ALGO-50)"
+                              className="flex-1 bg-black/40 border border-white/15 rounded-lg px-3 py-1.5 text-xs text-white uppercase font-mono outline-none focus:border-emerald-500 transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleApplyCoupon()}
+                              className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyCoupon('ALGO-50')}
+                            className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            Click here to quick-apply coupon <strong>ALGO-50</strong> (₹50 OFF)
+                          </button>
+                        </div>
+                      )}
+
+                      {couponFeedback && (
+                        <p className={`text-[10px] font-semibold ${couponFeedback.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {couponFeedback.message}
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+
                   <p className="text-[10px] text-slate-500">
-                    Reg No. starting with <strong className="text-slate-400">125</strong> = 2nd Year (₹200) • <strong className="text-slate-400">126</strong> = 1st Year (₹100)
+                    Reg No. starting with <strong className="text-slate-400">125</strong> = 2nd Year (<span className="line-through text-slate-500">₹200</span> <span className="text-emerald-400 font-bold">₹150</span> with ALGO-50) • <strong className="text-slate-400">126</strong> = 1st Year (₹100)
                   </p>
                 </div>
 

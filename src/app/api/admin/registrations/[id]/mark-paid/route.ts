@@ -46,7 +46,7 @@ export async function POST(
 
     const timestamp = new Date().toISOString();
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
-    const feePaise = EVENT_CONFIG.getFeeForYear(resolvedYear).paise;
+    const feePaise = EVENT_CONFIG.getFeeForYear(resolvedYear, reg.coupon_code).paise;
 
     // 3. Prepare token if missing
     const ticketToken = reg.ticket_token || crypto.randomBytes(24).toString('hex');

@@ -71,18 +71,80 @@ export const EVENT_CONFIG = {
     return "Only 1st year and second year is allowed in this freshers";
   },
 
+  coupons: {
+    'ALGO-50': {
+      code: 'ALGO-50',
+      discountInr: 50,
+      discountPaise: 5000,
+      allowedYears: ['2nd Year'],
+      description: '₹50 OFF for 2nd Year Students (Pay ₹150 instead of ₹200)'
+    }
+  },
+
   /**
-   * Get registration fee by Year or Registration Number
+   * Normalize and validate coupon code for a given academic year or reg number
    */
-  getFeeForYear: (yearOrRegNo?: string | null) => {
-    if (!yearOrRegNo) {
-      return { inr: 100, paise: 10000 };
+  validateCoupon: (couponCode?: string | null, yearOrRegNo?: string | null) => {
+    if (!couponCode) {
+      return { valid: false, message: null, coupon: null };
     }
-    // If it's already '2nd Year' or starts with '125'
-    if (yearOrRegNo === '2nd Year' || yearOrRegNo.trim().startsWith('125')) {
-      return { inr: 200, paise: 20000 };
+    const clean = couponCode.trim().toUpperCase().replace(/[\s_]+/g, '-');
+    const normalized = clean === 'ALGO50' ? 'ALGO-50' : clean;
+
+    if (normalized !== 'ALGO-50') {
+      return { valid: false, message: 'Invalid coupon code.', coupon: null };
     }
-    return { inr: 100, paise: 10000 };
+
+    const resolvedYear = EVENT_CONFIG.getYearFromRegNo(yearOrRegNo) || (yearOrRegNo === '2nd Year' ? '2nd Year' : (yearOrRegNo === '1st Year' ? '1st Year' : null));
+    if (resolvedYear && resolvedYear !== '2nd Year') {
+      return { valid: false, message: 'Coupon ALGO-50 is only valid for 2nd Year students.', coupon: null };
+    }
+
+    return {
+      valid: true,
+      message: 'Coupon ALGO-50 applied! ₹50 discount active.',
+      coupon: {
+        code: 'ALGO-50',
+        discountInr: 50,
+        discountPaise: 5000
+      }
+    };
+  },
+
+  /**
+   * Get registration fee by Year or Registration Number with optional coupon
+   */
+  getFeeForYear: (yearOrRegNo?: string | null, couponCode?: string | null) => {
+    const is2ndYear = yearOrRegNo === '2nd Year' || (typeof yearOrRegNo === 'string' && yearOrRegNo.trim().startsWith('125'));
+    const baseInr = is2ndYear ? 200 : 100;
+    const basePaise = is2ndYear ? 20000 : 10000;
+
+    if (is2ndYear) {
+      const couponCheck = EVENT_CONFIG.validateCoupon(couponCode, '2nd Year');
+      if (couponCheck.valid) {
+        return {
+          baseInr,
+          basePaise,
+          discountInr: 50,
+          discountPaise: 5000,
+          inr: 150,
+          paise: 15000,
+          couponCode: 'ALGO-50',
+          couponApplied: true
+        };
+      }
+    }
+
+    return {
+      baseInr,
+      basePaise,
+      discountInr: 0,
+      discountPaise: 0,
+      inr: baseInr,
+      paise: basePaise,
+      couponCode: null,
+      couponApplied: false
+    };
   },
 
   contacts: [

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       }, { status: 429 });
     }
 
-    const { registration_id } = await request.json();
+    const { registration_id, coupon_code } = await request.json();
 
     if (!registration_id) {
       return NextResponse.json({
@@ -66,11 +66,32 @@ export async function POST(request: NextRequest) {
         .eq('id', registration_id);
     }
 
-    // 2. Initialize Razorpay credentials & calculate year-based fee (125 -> 2nd Year ₹200, 126 -> 1st Year ₹100)
+    // 2. Initialize Razorpay credentials & calculate year-based fee with coupon support
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
-    const amountInPaise = EVENT_CONFIG.getFeeForYear(resolvedYear).paise; // ₹100 (1st Year) or ₹200 (2nd Year) in paise
+    
+    // Determine active coupon (from request body if explicitly provided, else from reg record)
+    const activeCouponCode = coupon_code !== undefined ? coupon_code : reg.coupon_code;
+    const feeCalculation = EVENT_CONFIG.getFeeForYear(resolvedYear, activeCouponCode);
+    const amountInPaise = feeCalculation.paise; // ₹100 (1st Year), ₹150 (2nd Year with ALGO-50), ₹200 (2nd Year without coupon)
+
+    // If coupon was explicitly updated in request, sync back to registration record
+    if (coupon_code !== undefined && coupon_code !== reg.coupon_code) {
+      try {
+        await supabaseAdmin
+          .from('registrations')
+          .update({
+            coupon_code: feeCalculation.couponCode,
+            discount_amount: feeCalculation.discountInr,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', reg.id);
+      } catch (couponSyncErr) {
+        console.warn('Failed to sync coupon to registration record:', couponSyncErr);
+      }
+    }
+
     const isRazorpayConfigured = !!(keyId && keySecret && !keyId.includes('placeholder') && !keySecret.includes('placeholder'));
 
     if (!isRazorpayConfigured) {
@@ -99,8 +120,6 @@ export async function POST(request: NextRequest) {
     const latestPayment = existingPayments && existingPayments.length > 0 ? existingPayments[0] : null;
 
     // Check if we can safely reuse a recent genuine Razorpay order (created within last 15 minutes with matching amount).
-    // IMPORTANT: The register route pre-populates a fake placeholder like `order_pending_xxx`.
-    // These must NEVER be passed to Razorpay checkout — they don't exist as real orders.
     if (latestPayment && latestPayment.payment_status === 'PENDING' && latestPayment.razorpay_order_id) {
       const orderCreatedAt = new Date(latestPayment.updated_at || latestPayment.created_at).getTime();
       const ageMinutes = (Date.now() - orderCreatedAt) / (1000 * 60);
@@ -144,6 +163,7 @@ export async function POST(request: NextRequest) {
           registration_number: reg.registration_number,
           full_name: reg.full_name,
           email: reg.email,
+          coupon_code: feeCalculation.couponCode || 'NONE',
         },
       };
 
@@ -215,7 +235,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Return success with Order info and public Key ID (never secret)
+    // 5. Return success with Order info, coupon metadata, and public Key ID (never secret)
     return NextResponse.json({
       success: true,
       data: {
@@ -225,12 +245,20 @@ export async function POST(request: NextRequest) {
         key_id: keyId || '',
         razorpay_configured: isRazorpayConfigured,
         payment_mode: 'live',
+        pricing: {
+          base_inr: feeCalculation.baseInr,
+          discount_inr: feeCalculation.discountInr,
+          final_inr: feeCalculation.inr,
+          coupon_code: feeCalculation.couponCode,
+          coupon_applied: feeCalculation.couponApplied,
+        },
         student: {
           name: reg.full_name,
           email: reg.email,
           phone: reg.phone,
           registration_number: reg.registration_number,
-          year: reg.year,
+          year: reg.year || resolvedYear,
+          coupon_code: feeCalculation.couponCode,
         }
       }
     });

@@ -46,6 +46,11 @@ export const registerSchema = z.object({
   photo_path: z
     .string()
     .optional(),
+  coupon_code: z
+    .string()
+    .trim()
+    .optional()
+    .nullable(),
 }).superRefine((data, ctx) => {
   // Cross-field validation: modeling_talent is required when modeling = 'Yes'
   if (data.modeling === 'Yes' && !data.modeling_talent?.trim()) {

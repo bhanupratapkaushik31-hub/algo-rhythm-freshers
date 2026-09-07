@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { EVENT_CONFIG } from '@/config/event';
 
 const MOCK_DB_FILE = path.join(process.cwd(), 'db_mock.json');
 
@@ -154,7 +155,7 @@ export function mockMarkAsPaid(id: string) {
   });
 
   const existingPay = db.payments.find(p => p.registration_id === id);
-  const feePaise = reg.year === '2nd Year' ? 20000 : 10000;
+  const feePaise = EVENT_CONFIG.getFeeForYear(reg.year, reg.coupon_code).paise;
   const timestamp = new Date().toISOString();
 
   if (existingPay) {
@@ -241,9 +242,13 @@ export function mockGetStats() {
   const paidCount = paidRegs.length;
   const pendingReg = activeRegs.filter(r => r.registration_status === 'PENDING').length;
   
-  // Sum payments for active paid registrations (1st Year: ₹100, 2nd Year: ₹200)
+  // Sum payments for active paid registrations (considering payment amounts and coupons)
   const totalCollection = paidRegs.reduce((sum, r) => {
-    const fee = r.year === '2nd Year' ? 200 : 100;
+    const pay = db.payments.find(p => p.registration_id === r.id && p.payment_status === 'SUCCESS');
+    if (pay?.amount) {
+      return sum + Math.round(pay.amount / 100);
+    }
+    const fee = EVENT_CONFIG.getFeeForYear(r.year, r.coupon_code).inr;
     return sum + fee;
   }, 0);
   
