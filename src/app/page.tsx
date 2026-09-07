@@ -28,15 +28,19 @@ export default function Home() {
   const [isRegOpen, setIsRegOpen] = useState(true);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isEventStarted, setIsEventStarted] = useState(false);
+  const [regTimeLeft, setRegTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [isRegEnded, setIsRegEnded] = useState(false);
 
-  // 1. Live Countdown Timer Logic
+  // 1. Live Countdown Timer Logic for Event and Registration Deadline
   useEffect(() => {
     const targetDate = new Date(EVENT_CONFIG.date).getTime();
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T12:00:00+05:30").getTime();
 
     const updateTimer = () => {
       const now = new Date().getTime();
-      const difference = targetDate - now;
 
+      // Event countdown
+      const difference = targetDate - now;
       if (difference <= 0) {
         setIsEventStarted(true);
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -46,8 +50,21 @@ export default function Home() {
         const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-
         setTimeLeft({ days, hours, minutes, seconds });
+      }
+
+      // Registration deadline countdown (Today 12:00 PM)
+      const regDifference = regTargetDate - now;
+      if (regDifference <= 0) {
+        setIsRegEnded(true);
+        setRegTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+      } else {
+        setIsRegEnded(false);
+        const days = Math.floor(regDifference / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((regDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((regDifference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((regDifference % (1000 * 60)) / 1000);
+        setRegTimeLeft({ days, hours, minutes, seconds });
       }
     };
 
@@ -132,6 +149,30 @@ export default function Home() {
             {EVENT_CONFIG.hostedBy}
           </motion.div>
 
+          {/* Registration Deadline Alert Banner */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="mb-6 inline-block"
+          >
+            {isRegEnded ? (
+              <div className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs sm:text-sm font-bold tracking-wider uppercase shadow-lg shadow-rose-950/40">
+                <Clock className="w-4 h-4 text-rose-400" />
+                <span>Registrations Closed Today at 12:00 PM</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-rose-500/20 border border-amber-400/40 text-amber-200 text-xs sm:text-sm font-bold tracking-wider uppercase shadow-lg shadow-amber-950/40 animate-pulse">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>Registration Closes Today (12:00 PM):</span>
+                <span className="font-outfit font-extrabold text-white text-sm sm:text-base bg-amber-500/30 px-2.5 py-0.5 rounded-md border border-amber-400/30">
+                  {regTimeLeft.hours}h {regTimeLeft.minutes}m {regTimeLeft.seconds}s
+                </span>
+                <span className="text-amber-300 font-extrabold">LEFT</span>
+              </div>
+            )}
+          </motion.div>
+
           {/* Large Event Title */}
           <h1 className="text-6xl md:text-8xl font-extrabold tracking-tight mb-2 font-outfit select-none">
             <span className="text-gradient-indigo-purple drop-shadow-md">ALGO</span>
@@ -156,10 +197,10 @@ export default function Home() {
             transition={{ delay: 0.4 }}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8"
           >
-            {isRegOpen ? (
+            {isRegOpen && !isRegEnded ? (
               <Link
                 href="/register"
-                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-0.5 transition-all duration-200 text-sm tracking-wider uppercase"
+                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white font-bold rounded-full shadow-xl hover:shadow-pink-500/25 transform hover:-translate-y-0.5 transition-all duration-200 text-sm tracking-wider uppercase ring-2 ring-pink-400/30"
               >
                 Register Now
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -209,54 +250,151 @@ export default function Home() {
         </motion.button>
       </section>
 
-      {/* Countdown Timer Section */}
-      <section className="py-12 bg-black/30 border-y border-white/5 relative">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <h3 className="text-xs uppercase tracking-widest text-slate-400 mb-6 font-semibold">
-            {isEventStarted ? "Status" : "Countdown to Algorithmic Beats"}
-          </h3>
+      {/* Dual Countdown Timers Section */}
+      <section className="py-14 bg-black/40 border-y border-white/5 relative">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* Timer 1: Registration Deadline Countdown (Today 12 PM) */}
+            <div className="relative rounded-2xl p-6 sm:p-8 bg-gradient-to-b from-amber-500/10 via-rose-500/5 to-transparent border border-amber-500/30 shadow-xl shadow-amber-950/20 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-4">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  Registration Deadline
+                </div>
+                <span className="text-xs font-semibold text-slate-400">
+                  Today, 12:00 PM IST
+                </span>
+              </div>
 
-          <AnimatePresence mode="wait">
-            {isEventStarted ? (
-              <motion.div
-                key="started"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-2xl md:text-3xl font-extrabold font-outfit text-gradient-purple-pink py-4 tracking-wider uppercase"
-              >
-                THE EVENT HAS STARTED 🎉
-              </motion.div>
-            ) : (
-              <motion.div
-                key="timer"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="grid grid-cols-4 gap-4 md:gap-8 max-w-xl mx-auto"
-              >
-                {/* Days */}
-                <div className="flex flex-col items-center p-3 md:p-4 rounded-xl bg-white/5 border border-white/5 shadow-inner">
-                  <span className="text-3xl md:text-5xl font-bold font-outfit text-[#f8fafc] tracking-tight">{timeLeft.days}</span>
-                  <span className="text-[10px] md:text-xs uppercase text-slate-400 mt-1 font-semibold">Days</span>
+              <h3 className="text-lg sm:text-xl font-bold font-outfit text-white mb-2">
+                Registration Closes Today at 12:00 PM
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 mb-6">
+                Register before 12:00 PM noon today to get entry passes & official DL approval.
+              </p>
+
+              <AnimatePresence mode="wait">
+                {isRegEnded ? (
+                  <motion.div
+                    key="reg-ended"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="text-lg sm:text-xl font-extrabold font-outfit text-rose-400 py-4 tracking-wider uppercase text-center bg-rose-950/20 rounded-xl border border-rose-500/30"
+                  >
+                    ⛔ REGISTRATIONS CLOSED AT 12:00 PM
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="reg-timer"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="grid grid-cols-3 gap-3 sm:gap-4 max-w-md mx-auto w-full"
+                  >
+                    {/* Hours */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-amber-950/30 border border-amber-500/20 shadow-inner">
+                      <span className="text-3xl sm:text-4xl font-bold font-outfit text-amber-200 tracking-tight">{regTimeLeft.hours}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-amber-400/80 mt-1 font-semibold">Hours</span>
+                    </div>
+                    {/* Minutes */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-amber-950/30 border border-amber-500/20 shadow-inner">
+                      <span className="text-3xl sm:text-4xl font-bold font-outfit text-amber-200 tracking-tight">{regTimeLeft.minutes}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-amber-400/80 mt-1 font-semibold">Mins</span>
+                    </div>
+                    {/* Seconds */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-amber-950/30 border border-amber-500/20 shadow-inner">
+                      <span className="text-3xl sm:text-4xl font-bold font-outfit text-pink-400 tracking-tight animate-pulse">{regTimeLeft.seconds}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-pink-400/80 mt-1 font-semibold">Secs</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="mt-6 text-center">
+                {isRegOpen && !isRegEnded ? (
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 transition-colors"
+                  >
+                    Fill Registration Form Now <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                ) : (
+                  <span className="text-xs text-slate-400">Portal closed</span>
+                )}
+              </div>
+            </div>
+
+            {/* Timer 2: Event Kickoff Countdown */}
+            <div className="relative rounded-2xl p-6 sm:p-8 bg-gradient-to-b from-purple-500/10 via-indigo-500/5 to-transparent border border-purple-500/30 shadow-xl shadow-purple-950/20 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-4">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  Main Event Kickoff
                 </div>
-                {/* Hours */}
-                <div className="flex flex-col items-center p-3 md:p-4 rounded-xl bg-white/5 border border-white/5 shadow-inner">
-                  <span className="text-3xl md:text-5xl font-bold font-outfit text-[#f8fafc] tracking-tight">{timeLeft.hours}</span>
-                  <span className="text-[10px] md:text-xs uppercase text-slate-400 mt-1 font-semibold">Hours</span>
-                </div>
-                {/* Minutes */}
-                <div className="flex flex-col items-center p-3 md:p-4 rounded-xl bg-white/5 border border-white/5 shadow-inner">
-                  <span className="text-3xl md:text-5xl font-bold font-outfit text-[#f8fafc] tracking-tight">{timeLeft.minutes}</span>
-                  <span className="text-[10px] md:text-xs uppercase text-slate-400 mt-1 font-semibold">Mins</span>
-                </div>
-                {/* Seconds */}
-                <div className="flex flex-col items-center p-3 md:p-4 rounded-xl bg-white/5 border border-white/5 shadow-inner">
-                  <span className="text-3xl md:text-5xl font-bold font-outfit text-[#f8fafc] tracking-tight text-pink-500">{timeLeft.seconds}</span>
-                  <span className="text-[10px] md:text-xs uppercase text-slate-400 mt-1 font-semibold">Secs</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <span className="text-xs font-semibold text-slate-400">
+                  9 Sept, 1:00 PM IST
+                </span>
+              </div>
+
+              <h3 className="text-lg sm:text-xl font-bold font-outfit text-white mb-2">
+                Countdown to Algorithmic Beats
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 mb-6">
+                Baldev Raj Mittal Unipolis • The biggest welcome celebration of CSE 2026.
+              </p>
+
+              <AnimatePresence mode="wait">
+                {isEventStarted ? (
+                  <motion.div
+                    key="event-started"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="text-lg sm:text-xl font-extrabold font-outfit text-gradient-purple-pink py-4 tracking-wider uppercase text-center bg-purple-950/20 rounded-xl border border-purple-500/30"
+                  >
+                    THE EVENT HAS STARTED 🎉
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="event-timer"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="grid grid-cols-4 gap-2 sm:gap-4 max-w-md mx-auto w-full"
+                  >
+                    {/* Days */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 shadow-inner">
+                      <span className="text-2xl sm:text-4xl font-bold font-outfit text-purple-200 tracking-tight">{timeLeft.days}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-purple-400/80 mt-1 font-semibold">Days</span>
+                    </div>
+                    {/* Hours */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 shadow-inner">
+                      <span className="text-2xl sm:text-4xl font-bold font-outfit text-purple-200 tracking-tight">{timeLeft.hours}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-purple-400/80 mt-1 font-semibold">Hours</span>
+                    </div>
+                    {/* Minutes */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 shadow-inner">
+                      <span className="text-2xl sm:text-4xl font-bold font-outfit text-purple-200 tracking-tight">{timeLeft.minutes}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-purple-400/80 mt-1 font-semibold">Mins</span>
+                    </div>
+                    {/* Seconds */}
+                    <div className="flex flex-col items-center p-3 sm:p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 shadow-inner">
+                      <span className="text-2xl sm:text-4xl font-bold font-outfit text-pink-400 tracking-tight">{timeLeft.seconds}</span>
+                      <span className="text-[10px] sm:text-xs uppercase text-pink-400/80 mt-1 font-semibold">Secs</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="mt-6 text-center">
+                <button
+                  onClick={scrollToInfo}
+                  className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-300 hover:text-purple-200 transition-colors"
+                >
+                  View Event Schedule & Venue <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       </section>
 

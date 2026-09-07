@@ -16,7 +16,8 @@ import {
   Loader2, 
   AlertTriangle,
   CheckCircle2,
-  FileText
+  FileText,
+  Clock
 } from 'lucide-react';
 import Link from 'next/link';
 import { registerSchema, RegisterInput } from '@/lib/schemas';
@@ -28,25 +29,49 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [portalClosed, setPortalClosed] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
-
-  // Photo uploading states
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoMimeType, setPhotoMimeType] = useState<string | null>(null);
   const [photoSizeKb, setPhotoSizeKb] = useState<number | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [regTimeLeft, setRegTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const [isRegEnded, setIsRegEnded] = useState(false);
 
-  // 1. Check registration portal status on mount in background
+  // 1. Check registration portal status and countdown
   useEffect(() => {
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T12:00:00+05:30").getTime();
+
+    const updateRegTimer = () => {
+      const now = new Date().getTime();
+      const diff = regTargetDate - now;
+      if (diff <= 0) {
+        setIsRegEnded(true);
+        setPortalClosed(true);
+        setRegTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setRegTimeLeft({ hours, minutes, seconds });
+      }
+    };
+
+    updateRegTimer();
+    const interval = setInterval(updateRegTimer, 1000);
+
     fetch('/api/admin/settings')
       .then(res => res.json())
       .then(res => {
         if (res.success && res.data && typeof res.data.open === 'boolean') {
-          setPortalClosed(!res.data.open);
+          if (!res.data.open) {
+            setPortalClosed(true);
+          }
         }
       })
       .catch(err => console.error('Error reading portal status:', err));
+
+    return () => clearInterval(interval);
   }, []);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -344,10 +369,19 @@ export default function Register() {
           <>
             {/* Header */}
             <div className="mb-8">
+              {/* Live Countdown Urgency Banner */}
+              <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider animate-pulse">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Closing Today at 12:00 PM:</span>
+                <span className="font-outfit font-extrabold text-white text-xs bg-amber-500/30 px-2 py-0.5 rounded border border-amber-400/30">
+                  {regTimeLeft.hours}h {regTimeLeft.minutes}m {regTimeLeft.seconds}s left
+                </span>
+              </div>
+
               <h1 className="text-3xl font-extrabold text-white font-outfit tracking-tight flex items-center gap-2">
                 Register for <span className="text-gradient-purple-pink">ALGO-RHYTHM 2K26</span>
               </h1>
-              <p className="text-slate-400 text-sm mt-1">Complete your details to secure your entry ticket.</p>
+              <p className="text-slate-400 text-sm mt-1">Complete your details to secure your entry ticket before noon today.</p>
             </div>
 
             {/* Form */}
