@@ -1,0 +1,53 @@
+name: Build Android Coordinator APK
+
+on:
+  push:
+    paths:
+      - 'coordinator-mobile-app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Generate Coordinator Android APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: coordinator-mobile-app
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NPM Dependencies
+        run: npm install
+
+      - name: Prebuild Native Android Project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Standalone Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK as GitHub Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AlgoRhythm-Coordinator-Scanner-APK
+          path: coordinator-mobile-app/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
