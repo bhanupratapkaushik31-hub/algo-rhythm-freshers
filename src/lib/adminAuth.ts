@@ -69,15 +69,19 @@ export async function verifyAdminAuth(
           adminErr = null;
         }
       } else {
-        // Auto-provision coordinator record for valid auth user
+        // Auto-provision record for valid auth user based on email type
         const name = user.user_metadata?.name || user.email.split('@')[0];
+        const lowerEmail = user.email.toLowerCase();
+        const isSuperAdminEmail = lowerEmail.includes('admin') || lowerEmail.includes('scai') || lowerEmail.includes('team');
+        const roleToAssign: 'super_admin' | 'coordinator' = isSuperAdminEmail ? 'super_admin' : 'coordinator';
+
         const { data: newRec } = await supabaseAdmin
           .from('admins')
           .insert({
             id: user.id,
             name: name,
-            email: user.email.toLowerCase(),
-            role: 'coordinator',
+            email: lowerEmail,
+            role: roleToAssign,
             active: true
           })
           .select()
@@ -90,8 +94,8 @@ export async function verifyAdminAuth(
           adminRecord = {
             id: user.id,
             name: name,
-            email: user.email.toLowerCase(),
-            role: 'coordinator',
+            email: lowerEmail,
+            role: roleToAssign,
             active: true
           } as any;
           adminErr = null;

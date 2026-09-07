@@ -69,11 +69,6 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
 
         // Check if page requires specific roles
         if (requiredRoles && !requiredRoles.includes(adminRecord.role as any)) {
-          // If scanner/coordinator trying to access full admin pages, auto-redirect to coordinator scanner
-          if (['scanner', 'coordinator'].includes(adminRecord.role) && pathname !== '/admin/scanner') {
-            router.push('/coordinator/scanner');
-            return;
-          }
           setUnauthorized(true);
         }
 
@@ -116,23 +111,23 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
           </div>
           <h1 className="text-2xl font-bold font-outfit text-white mb-2">Access Denied</h1>
           <p className="text-slate-400 text-sm leading-relaxed mb-6">
-            You do not have the required permissions to view this dashboard page. (Your role: <span className="text-pink-400 font-bold uppercase">{profile?.role}</span>).
+            You are logged in as <span className="text-pink-400 font-bold uppercase">{profile?.role}</span> ({profile?.email}). This section requires Administrator permissions.
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={handleSignOut}
               className="flex-1 inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-bold uppercase tracking-wider rounded-xl text-white cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
-              Sign Out
+              Sign Out / Switch
             </button>
-            {profile?.role === 'scanner' && (
+            {['scanner', 'coordinator'].includes(profile?.role || '') && (
               <Link
-                href="/admin/scanner"
-                className="flex-1 inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-xs uppercase tracking-wider rounded-xl text-white"
+                href="/coordinator/scanner"
+                className="flex-1 inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 font-bold text-xs uppercase tracking-wider rounded-xl text-white shadow-lg shadow-purple-500/20"
               >
                 <ScanQrCode className="w-4 h-4" />
-                QR Scanner
+                Open Scanner
               </Link>
             )}
           </div>
