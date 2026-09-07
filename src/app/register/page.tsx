@@ -458,8 +458,8 @@ export default function Register() {
                 </div>
 
                 {/* 3. Automatic Year & Fee Detection */}
-                <div className="space-y-3">
-                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Academic Year & Ticket Fee</label>
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-wider font-bold text-slate-400 block">Academic Year</label>
                   <div className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 flex justify-between items-center text-sm">
                     {detectedYear ? (
                       <div className="flex items-center gap-2">
@@ -476,18 +476,12 @@ export default function Register() {
 
                     <div className="flex items-center gap-2">
                       {detectedYear === '2nd Year' ? (
-                        couponApplied ? (
-                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/40">
-                            <span className="line-through text-slate-500 text-xs font-normal">₹200</span>
-                            <span className="text-xs font-black text-emerald-300 font-outfit">₹150</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs font-bold px-3 py-1 rounded-full border text-purple-300 bg-purple-950/40 border-purple-500/30">
-                            ₹200
-                          </span>
-                        )
+                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/40">
+                          <span className="line-through text-slate-500 text-xs font-normal">₹200</span>
+                          <span className="text-xs font-black text-emerald-300 font-outfit">₹150</span>
+                        </div>
                       ) : (
-                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
                           detectedYear 
                             ? 'text-purple-300 bg-purple-950/40 border-purple-500/30' 
                             : 'text-slate-500 bg-white/5 border-white/5'
@@ -497,85 +491,68 @@ export default function Register() {
                       )}
                     </div>
                   </div>
-
-                  {/* 2nd Year Exclusive Discount Coupon Box */}
-                  {detectedYear === '2nd Year' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 bg-gradient-to-r from-emerald-950/40 via-purple-950/30 to-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Tag className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-xs font-bold text-emerald-300 font-outfit">2nd Year Discount Coupon</span>
-                        </div>
-                        {couponApplied && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            <Check className="w-3 h-3" />
-                            SAVE ₹50
-                          </span>
-                        )}
-                      </div>
-
-                      {couponApplied ? (
-                        <div className="flex items-center justify-between bg-black/40 border border-emerald-500/30 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-black text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-                              ALGO-50
-                            </span>
-                            <span className="text-[11px] text-slate-300">
-                              ₹50 OFF applied (<span className="line-through text-slate-500">₹200</span> <strong className="text-emerald-300">₹150</strong>)
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleRemoveCoupon}
-                            className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-wider underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={couponCode}
-                              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                              placeholder="Enter coupon (e.g. ALGO-50)"
-                              className="flex-1 bg-black/40 border border-white/15 rounded-lg px-3 py-1.5 text-xs text-white uppercase font-mono outline-none focus:border-emerald-500 transition-colors"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleApplyCoupon()}
-                              className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-md"
-                            >
-                              Apply
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleApplyCoupon('ALGO-50')}
-                            className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            Click here to quick-apply coupon <strong>ALGO-50</strong> (₹50 OFF)
-                          </button>
-                        </div>
-                      )}
-
-                      {couponFeedback && (
-                        <p className={`text-[10px] font-semibold ${couponFeedback.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {couponFeedback.message}
-                        </p>
-                      )}
-                    </motion.div>
-                  )}
-
                   <p className="text-[10px] text-slate-500">
-                    Reg No. starting with <strong className="text-slate-400">125</strong> = 2nd Year (<span className="line-through text-slate-500">₹200</span> <span className="text-emerald-400 font-bold">₹150</span> with ALGO-50) • <strong className="text-slate-400">126</strong> = 1st Year (₹100)
+                    Reg No. starting with <strong className="text-slate-400">125</strong> = 2nd Year • <strong className="text-slate-400">126</strong> = 1st Year
                   </p>
                 </div>
+
+                {/* 3b. Dedicated New Box: Discount Coupon for 2nd Year (Appears automatically with ALGO-50 applied) */}
+                <AnimatePresence>
+                  {detectedYear === '2nd Year' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0, scale: 0.96 }}
+                      animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                      exit={{ opacity: 0, height: 0, scale: 0.96 }}
+                      transition={{ duration: 0.25 }}
+                      className="space-y-2 overflow-hidden"
+                    >
+                      <label className="text-xs uppercase tracking-wider font-bold text-emerald-400 block flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-emerald-400" />
+                          Discount Coupon
+                        </span>
+                        <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                          2ND YEAR SPECIAL
+                        </span>
+                      </label>
+
+                      <div className="p-4 bg-gradient-to-br from-emerald-950/50 via-purple-950/30 to-emerald-950/50 border-2 border-emerald-500/40 rounded-2xl shadow-lg shadow-emerald-950/30 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="relative flex-1">
+                            <input
+                              type="text"
+                              value="ALGO-50"
+                              readOnly
+                              className="w-full bg-black/60 border border-emerald-500/40 rounded-xl px-4 py-2.5 text-sm font-mono font-black text-emerald-300 tracking-wider outline-none cursor-default shadow-inner"
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] font-black text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                              <Check className="w-3.5 h-3.5" />
+                              APPLIED
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-500/20 text-xs">
+                          <div className="space-y-0.5">
+                            <p className="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
+                              <span>🎉 Coupon <strong>ALGO-50</strong> automatically applied!</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              ₹50 instant discount applied for 2nd Year CSE attendees.
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-400 block">Payable Fee:</span>
+                            <span className="text-sm font-black text-white font-outfit">
+                              <span className="line-through text-slate-500 font-normal text-xs mr-1">₹200</span>
+                              <span className="text-emerald-300">₹150</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* 4. Modeling Enrollment */}
                 <div className="space-y-2">
