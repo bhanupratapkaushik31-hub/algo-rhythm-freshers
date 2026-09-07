@@ -10,10 +10,7 @@ import {
   Lock, 
   Loader2, 
   AlertTriangle, 
-  ArrowLeft,
-  Smartphone,
-  Download,
-  ShieldCheck
+  ArrowLeft
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -24,39 +21,6 @@ export default function CoordinatorLogin() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-
-  // Listen for Android PWA Install Event
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-    window.addEventListener('appinstalled', () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-    });
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-    };
-  }, []);
-
-  const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        setIsInstalled(true);
-      }
-      setDeferredPrompt(null);
-    } else {
-      alert('To install directly on Android:\n1. Tap the 3 dots (⋮) in Chrome\n2. Select "Install app" or "Add to Home screen"\n3. Enjoy instant full-screen scanning without re-login!');
-    }
-  };
 
   // 1. If already logged in, redirect to scanner page
   useEffect(() => {
@@ -255,32 +219,6 @@ export default function CoordinatorLogin() {
           </button>
 
         </form>
-
-        {/* Android App Direct Install Section */}
-        <div className="mt-8 pt-6 border-t border-white/10 text-center space-y-3">
-          <div className="flex items-center justify-center gap-2 text-xs font-bold text-purple-300">
-            <Smartphone className="w-4 h-4 text-purple-400" />
-            <span>Dedicated Android App</span>
-          </div>
-
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Install the Coordinator Scanner app on your Android device for 1-tap gate access and permanent offline login.
-          </p>
-
-          <button
-            type="button"
-            onClick={handleInstallApp}
-            className="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-purple-500/30 hover:border-purple-500/60 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-sm"
-          >
-            <Download className="w-3.5 h-3.5 text-purple-400" />
-            {isInstalled ? 'App Already Installed ✓' : '📲 Install Android App (1-Tap)'}
-          </button>
-
-          <div className="flex items-center justify-center gap-1 text-[10px] text-slate-500">
-            <ShieldCheck className="w-3 h-3 text-emerald-400" />
-            <span>Never logs out automatically &bull; Native camera torch & haptics</span>
-          </div>
-        </div>
       </motion.div>
     </div>
   );
