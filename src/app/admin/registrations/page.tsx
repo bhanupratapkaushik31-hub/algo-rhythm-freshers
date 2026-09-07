@@ -387,25 +387,37 @@ export default function AdminRegistrations() {
         "Registration No.", "Full Name", "Year", "School Name",
         "Modeling", "Modeling Talent / Performance", "Phone", "Email", "Payment Status",
         "Ticket ID", "Email Status", "Entry Status", "Entry Time",
-        "Coordinator"
+        "Coordinator", "Amount Paid"
       ];
 
-      const rows = data.map(r => [
-        r.registration_number,
-        r.full_name,
-        r.year,
-        r.school_name,
-        r.modeling,
-        r.modeling === 'Yes' ? (r.modeling_talent || 'Not provided') : '--',
-        r.phone,
-        r.email,
-        r.registration_status,
-        r.ticket_id || 'N/A',
-        (r as any).email_status || (r.email_sent ? 'SENT' : 'PENDING'),
-        r.entry_status,
-        r.entry_time ? new Date(r.entry_time).toLocaleString() : 'N/A',
-        r.entry_scanned_by || 'N/A'
-      ]);
+      const rows = data.map(r => {
+        const isPaid = r.registration_status === 'PAID';
+        const rawAmount = (r as any).amount_paid ?? (r as any).amount;
+        const calculatedAmount = isPaid
+          ? (r.discount_amount !== null && r.discount_amount !== undefined
+              ? (200 - Number(r.discount_amount))
+              : (r.year === '1st Year' ? 100 : 200))
+          : 0;
+        const finalAmount = rawAmount !== undefined && rawAmount !== null ? Number(rawAmount) : calculatedAmount;
+
+        return [
+          r.registration_number,
+          r.full_name,
+          r.year,
+          r.school_name,
+          r.modeling,
+          r.modeling === 'Yes' ? (r.modeling_talent || 'Not provided') : '--',
+          r.phone,
+          r.email,
+          r.registration_status,
+          r.ticket_id || 'N/A',
+          (r as any).email_status || (r.email_sent ? 'SENT' : 'PENDING'),
+          r.entry_status,
+          r.entry_time ? new Date(r.entry_time).toLocaleString() : 'N/A',
+          r.entry_scanned_by || 'N/A',
+          finalAmount
+        ];
+      });
 
       const csvContent = [
         headers.join(","),
