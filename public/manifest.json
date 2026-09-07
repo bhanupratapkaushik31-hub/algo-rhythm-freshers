@@ -1,0 +1,24 @@
+{
+  "name": "Algo-Rhythm Coordinator Scanner",
+  "short_name": "Coordinator",
+  "description": "Gate Entry & QR Ticket Scanner for Algo-Rhythm Freshers 2026",
+  "start_url": "/coordinator/login",
+  "display": "standalone",
+  "background_color": "#070417",
+  "theme_color": "#0c0724",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/globe.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/globe.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

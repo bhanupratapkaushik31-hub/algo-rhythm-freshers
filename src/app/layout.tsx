@@ -21,6 +21,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "ALGO-RHYTHM | CSE Fresher Party 2026 🎉",
   description: "Official registration and digital ticket portal for ALGO-RHYTHM - School of Computing and Artificial Intelligence annual Fresher Party 2026. Register now to secure your entry!",
+  manifest: "/manifest.json",
   openGraph: {
     title: "ALGO-RHYTHM | CSE Fresher Party 2026 🎉",
     description: "Official registration and digital ticket portal for ALGO-RHYTHM - CSE Fresher Party 2026. Baldev Raj Mittal Unipolis, 9 September 2026.",
