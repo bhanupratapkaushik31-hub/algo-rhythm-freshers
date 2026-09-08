@@ -62,22 +62,10 @@ export async function POST(request: NextRequest) {
     const detectedYear = EVENT_CONFIG.getYearFromRegNo(data.registration_number);
     const computedYear: string = detectedYear || '1st Year';
 
-    // 2. Server-side enforcement of modeling_talent logic
-    // ALWAYS force null if modeling is No, regardless of what client sends.
-    // If modeling is Yes but talent is blank/missing, reject.
-    const modeling_talent: string | null = data.modeling === 'Yes'
-      ? (data.modeling_talent?.trim() || null)
-      : null;
-
-    if (data.modeling === 'Yes' && !modeling_talent) {
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Please tell us about your talent or what you would like to perform.'
-        }
-      }, { status: 400 });
-    }
+    // 2. Server-side enforcement of modeling option (CLOSED)
+    // Modeling registrations are strictly closed. Force 'No' and null for all users.
+    const enforcedModeling = 'No';
+    const modeling_talent: string | null = null;
 
     // 3. Check if registration is open
     const { data: statusSetting, error: settingsError } = await supabaseAdmin
@@ -138,7 +126,7 @@ export async function POST(request: NextRequest) {
         full_name: data.full_name,
         year: computedYear,
         school_name: data.school_name,
-        modeling: data.modeling,
+        modeling: enforcedModeling,
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,
@@ -188,7 +176,7 @@ export async function POST(request: NextRequest) {
           full_name: data.full_name,
           year: computedYear,
           school_name: data.school_name,
-          modeling: data.modeling,
+          modeling: enforcedModeling,
           phone: data.phone,
           email: data.email,
           photo_path: data.photo_path,
@@ -269,7 +257,7 @@ export async function POST(request: NextRequest) {
       full_name: data.full_name,
       year: computedYear,
       school_name: data.school_name,
-      modeling: data.modeling,
+      modeling: enforcedModeling,
       modeling_talent: modeling_talent,
       phone: data.phone,
       email: data.email,
@@ -312,7 +300,7 @@ export async function POST(request: NextRequest) {
         full_name: data.full_name,
         year: computedYear,
         school_name: data.school_name,
-        modeling: data.modeling,
+        modeling: enforcedModeling,
         phone: data.phone,
         email: data.email,
         photo_path: data.photo_path,
