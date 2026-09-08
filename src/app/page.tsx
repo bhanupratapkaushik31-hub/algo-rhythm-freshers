@@ -34,7 +34,7 @@ export default function Home() {
   // 1. Live Countdown Timer Logic for Event and Registration Deadline
   useEffect(() => {
     const targetDate = new Date(EVENT_CONFIG.date).getTime();
-    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T20:00:00+05:30").getTime();
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-09T00:00:00+05:30").getTime();
 
     const updateTimer = () => {
       const now = new Date().getTime();
@@ -159,12 +159,12 @@ export default function Home() {
             {isRegEnded ? (
               <div className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs sm:text-sm font-bold tracking-wider uppercase shadow-lg shadow-rose-950/40">
                 <Clock className="w-4 h-4 text-rose-400" />
-                <span>Registrations Closed Today at 8:00 PM</span>
+                <span>Registrations Closed Today at 12:00 Midnight</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-rose-500/20 border border-amber-400/40 text-amber-200 text-xs sm:text-sm font-bold tracking-wider uppercase shadow-lg shadow-amber-950/40 animate-pulse">
                 <Clock className="w-4 h-4 text-amber-400" />
-                <span>Registration Closes Today (8:00 PM Extended):</span>
+                <span>Registration Closes Tonight (12:00 Midnight Extended):</span>
                 <span className="font-outfit font-extrabold text-white text-sm sm:text-base bg-amber-500/30 px-2.5 py-0.5 rounded-md border border-amber-400/30">
                   {regTimeLeft.hours}h {regTimeLeft.minutes}m {regTimeLeft.seconds}s
                 </span>
@@ -263,15 +263,15 @@ export default function Home() {
                   Registration Deadline
                 </div>
                 <span className="text-xs font-semibold text-slate-400">
-                  Today, 8:00 PM IST (Extended)
+                  Today, 12:00 Midnight IST (Extended)
                 </span>
               </div>
 
               <h3 className="text-lg sm:text-xl font-bold font-outfit text-white mb-2">
-                Registration Closes Today at 8:00 PM (Extended)
+                Registration Closes Tonight at 12:00 Midnight (Extended)
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 mb-6">
-                Register before 8:00 PM night today to get entry passes & official DL approval.
+                Register before 12:00 Midnight tonight to get entry passes & official DL approval.
               </p>
 
               <AnimatePresence mode="wait">
@@ -282,7 +282,7 @@ export default function Home() {
                     animate={{ opacity: 1, scale: 1 }}
                     className="text-lg sm:text-xl font-extrabold font-outfit text-rose-400 py-4 tracking-wider uppercase text-center bg-rose-950/20 rounded-xl border border-rose-500/30"
                   >
-                    ⛔ REGISTRATIONS CLOSED AT 8:00 PM
+                    ⛔ REGISTRATIONS CLOSED AT 12:00 MIDNIGHT
                   </motion.div>
                 ) : (
                   <motion.div

@@ -6,8 +6,8 @@ export const EVENT_CONFIG = {
   date: "2026-09-09T13:00:00+05:30", // ISO string for countdown timer logic (9 Sept 2026, 1:00 PM IST)
   displayDate: "9 September 2026",
   displayTime: "1:00 PM onwards",
-  registrationDeadline: "2026-09-08T20:00:00+05:30", // 8 Sept 2026, 8:00 PM IST (Extended till 8 PM)
-  displayRegistrationDeadline: "Today, 8 Sept at 8:00 PM (Extended)",
+  registrationDeadline: "2026-09-09T00:00:00+05:30", // 8-9 Sept 2026, 12:00 Midnight IST (Extended till 12 AM)
+  displayRegistrationDeadline: "Today, 8 Sept at 12:00 Midnight (Extended)",
   venue: "Baldev Raj Mittal Unipolis",
   hostedBy: "School of Computing and Artificial Intelligence",
   registrationFee: 100, // Base in INR (1st Year)

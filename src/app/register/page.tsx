@@ -40,7 +40,7 @@ export default function Register() {
 
   // 1. Check registration portal status and countdown
   useEffect(() => {
-    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T20:00:00+05:30").getTime();
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-09T00:00:00+05:30").getTime();
 
     const updateRegTimer = () => {
       const now = new Date().getTime();
@@ -372,7 +372,7 @@ export default function Register() {
               {/* Live Countdown Urgency Banner */}
               <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider animate-pulse">
                 <Clock className="w-3.5 h-3.5 text-amber-400" />
-                <span>Closing Today at 8:00 PM (Extended):</span>
+                <span>Closing Tonight at 12:00 Midnight (Extended):</span>
                 <span className="font-outfit font-extrabold text-white text-xs bg-amber-500/30 px-2 py-0.5 rounded border border-amber-400/30">
                   {regTimeLeft.hours}h {regTimeLeft.minutes}m {regTimeLeft.seconds}s left
                 </span>
@@ -381,7 +381,7 @@ export default function Register() {
               <h1 className="text-3xl font-extrabold text-white font-outfit tracking-tight flex items-center gap-2">
                 Register for <span className="text-gradient-purple-pink">ALGO-RHYTHM 2K26</span>
               </h1>
-              <p className="text-slate-400 text-sm mt-1">Complete your details to secure your entry ticket before 8:00 PM today.</p>
+              <p className="text-slate-400 text-sm mt-1">Complete your details to secure your entry ticket before 12:00 Midnight tonight.</p>
             </div>
 
             {/* Form */}
