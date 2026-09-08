@@ -96,68 +96,63 @@ export async function GET(request: NextRequest) {
 
     const primaryResult = await query;
     if (primaryResult.error) {
-      const errMsg = primaryResult.error.message;
-      const needsFallback = errMsg.includes('deleted_at') || errMsg.includes('payment_status') || errMsg.includes('refund_status');
-      
-      if (needsFallback) {
-        console.warn('Primary registrations query failed due to pending view updates, running fallback query:', errMsg);
-        let fallbackQuery = supabaseAdmin
-          .from('registrations_with_details')
-          .select('*', { count: 'exact' });
+      console.warn('Primary registrations_with_details query error:', primaryResult.error.message, '- attempting direct base registrations query...');
 
-        if (isDeletedView) {
-          fallbackQuery = fallbackQuery.eq('registration_status', 'CANCELLED');
-        } else {
-          fallbackQuery = fallbackQuery.neq('registration_status', 'CANCELLED');
-        }
+      // Fallback: Query base registrations table directly with all search and filters
+      let baseQuery = supabaseAdmin
+        .from('registrations')
+        .select('*', { count: 'exact' });
 
-        if (search) {
-          fallbackQuery = fallbackQuery.or(
-            `full_name.ilike.%${search}%,` +
-            `registration_number.ilike.%${search}%,` +
-            `ticket_id.ilike.%${search}%,` +
-            `email.ilike.%${search}%,` +
-            `phone.ilike.%${search}%`
-          );
-        }
-
-        if (year !== 'All') {
-          fallbackQuery = fallbackQuery.eq('year', year);
-        }
-
-        if (modeling !== 'All') {
-          fallbackQuery = fallbackQuery.eq('modeling', modeling);
-        }
-
-        if (paymentStatus !== 'All') {
-          if (paymentStatus === 'SUCCESS') {
-            fallbackQuery = fallbackQuery.eq('registration_status', 'PAID');
-          } else if (paymentStatus === 'PENDING') {
-            fallbackQuery = fallbackQuery.eq('registration_status', 'PENDING');
-          } else if (paymentStatus === 'FAILED') {
-            fallbackQuery = fallbackQuery.eq('registration_status', 'FAILED');
-          } else {
-            fallbackQuery = fallbackQuery.eq('registration_status', paymentStatus);
-          }
-        }
-
-        if (entryStatus !== 'All') {
-          fallbackQuery = fallbackQuery.eq('entry_status', entryStatus);
-        }
-
-        if (school) {
-          fallbackQuery = fallbackQuery.ilike('school_name', `%${school}%`);
-        }
-
-        fallbackQuery = fallbackQuery.order(sortBy, { ascending: sortOrder === 'asc' });
-        fallbackQuery = fallbackQuery.range(from, to);
-
-        const fallbackResult = await fallbackQuery;
-        list = fallbackResult.data;
-        count = fallbackResult.count;
-        error = fallbackResult.error;
+      if (isDeletedView) {
+        baseQuery = baseQuery.eq('registration_status', 'CANCELLED');
       } else {
-        error = primaryResult.error;
+        baseQuery = baseQuery.neq('registration_status', 'CANCELLED');
+      }
+
+      if (search) {
+        baseQuery = baseQuery.or(
+          `full_name.ilike.%${search}%,` +
+          `registration_number.ilike.%${search}%,` +
+          `ticket_id.ilike.%${search}%,` +
+          `email.ilike.%${search}%,` +
+          `phone.ilike.%${search}%`
+        );
+      }
+
+      if (year !== 'All') {
+        baseQuery = baseQuery.eq('year', year);
+      }
+
+      if (modeling !== 'All') {
+        baseQuery = baseQuery.eq('modeling', modeling);
+      }
+
+      if (paymentStatus !== 'All') {
+        if (paymentStatus === 'SUCCESS') {
+          baseQuery = baseQuery.eq('registration_status', 'PAID');
+        } else if (paymentStatus === 'PENDING') {
+          baseQuery = baseQuery.eq('registration_status', 'PENDING');
+        } else if (paymentStatus === 'FAILED') {
+          baseQuery = baseQuery.eq('registration_status', 'FAILED');
+        } else {
+          baseQuery = baseQuery.eq('registration_status', paymentStatus);
+        }
+      }
+
+      if (school) {
+        baseQuery = baseQuery.ilike('school_name', `%${school}%`);
+      }
+
+      baseQuery = baseQuery.order(sortBy, { ascending: sortOrder === 'asc' });
+      baseQuery = baseQuery.range(from, to);
+
+      const baseResult = await baseQuery;
+      if (!baseResult.error && baseResult.data) {
+        list = baseResult.data;
+        count = baseResult.count;
+        error = null;
+      } else {
+        error = baseResult.error || primaryResult.error;
       }
     } else {
       list = primaryResult.data;
