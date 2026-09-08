@@ -38,6 +38,22 @@ function getTransporter() {
   return null;
 }
 
+function getAppUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.replace(/\/+$/, '')}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/+$/, '')}`;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://algo-rhythm-freshers.vercel.app';
+  }
+  return 'http://localhost:3000';
+}
+
 export async function sendTicketEmail(registrationId: string, force = false): Promise<boolean> {
   const transporter = getTransporter();
 
@@ -89,8 +105,8 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
     const resolvedYear = EVENT_CONFIG.getYearFromRegNo(reg.registration_number) || reg.year || '1st Year';
     const paidAmount = payment?.amount ? Math.round(payment.amount / 100) : EVENT_CONFIG.getFeeForYear(resolvedYear, reg.coupon_code).inr;
 
-    // 3. Prepare ticket verification link
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // 3. Prepare ticket verification link (safely resolved production app URL)
+    const appUrl = getAppUrl();
     const ticketUrl = `${appUrl}/ticket/${reg.ticket_token}`;
 
     // 4. Render HTML template
@@ -946,6 +962,196 @@ export async function sendOtpEmail(email: string, otpCode: string, name?: string
   } catch (err) {
     console.error(`[Gmail Service] Failed to send OTP email to ${email}:`, err);
     return false;
+  }
+}
+
+export async function sendCustomBroadcastEmail(params: {
+  toEmail: string;
+  recipientName?: string;
+  subject: string;
+  messageHtml: string;
+  customSenderTitle?: string;
+  buttonText?: string;
+  buttonUrl?: string;
+}): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const {
+    toEmail,
+    recipientName = 'Student',
+    subject,
+    messageHtml,
+    customSenderTitle = 'ALGO-RHYTHM 2K26 Announcement',
+    buttonText,
+    buttonUrl
+  } = params;
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${subject}</title>
+      <style>
+        body {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background-color: #0d0620;
+          color: #ffffff;
+          margin: 0;
+          padding: 0;
+        }
+        .container {
+          max-width: 600px;
+          margin: 40px auto;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        .header {
+          background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+          padding: 30px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          letter-spacing: 2px;
+          color: #ffffff;
+          text-transform: uppercase;
+          font-weight: 800;
+        }
+        .header p {
+          margin: 6px 0 0 0;
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.9);
+          font-weight: 600;
+        }
+        .content {
+          padding: 32px;
+          background-color: #120b2e;
+          color: #e2e8f0;
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        .welcome {
+          font-size: 17px;
+          margin-bottom: 20px;
+          color: #ec4899;
+          font-weight: 700;
+        }
+        .message-body {
+          margin: 20px 0;
+          color: #cbd5e1;
+        }
+        .btn-container {
+          text-align: center;
+          margin: 30px 0;
+        }
+        .btn {
+          display: inline-block;
+          padding: 14px 28px;
+          background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+          color: #ffffff !important;
+          text-decoration: none;
+          font-weight: bold;
+          border-radius: 30px;
+          box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+          letter-spacing: 1px;
+          text-transform: uppercase;
+          font-size: 13px;
+        }
+        .footer {
+          background-color: #0b051c;
+          padding: 20px;
+          text-align: center;
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.4);
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>ALGO-RHYTHM 2K26</h1>
+          <p>${customSenderTitle}</p>
+        </div>
+        <div class="content">
+          <p class="welcome">Hello ${recipientName},</p>
+          
+          <div class="message-body">
+            ${messageHtml}
+          </div>
+
+          ${buttonUrl && buttonText ? `
+            <div class="btn-container">
+              <a href="${buttonUrl}" class="btn">${buttonText}</a>
+            </div>
+          ` : ''}
+
+          <p style="font-size: 12px; color: rgba(255, 255, 255, 0.5); text-align: center; margin-top: 30px; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 15px;">
+            For any queries, contact Bhanu Pratap Kaushik (8273930552) or Vaidya Vaibhava (9441262727).
+          </p>
+        </div>
+        <div class="footer">
+          &copy; 2026 ${EVENT_CONFIG.hostedBy}. All rights reserved.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  // 1. Resend API Dispatch
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const fromEmail = process.env.RESEND_FROM_EMAIL || 'ALGO-RHYTHM <noreply@resend.dev>';
+
+      const resendRes = await resend.emails.send({
+        from: fromEmail,
+        to: toEmail,
+        subject,
+        html: htmlContent,
+      });
+
+      if (!resendRes.error) {
+        return {
+          success: true,
+          messageId: resendRes.data?.id || 'RESEND_OK'
+        };
+      }
+      console.warn('[Resend Broadcast] Error, falling back to Gmail:', resendRes.error);
+    } catch (err: any) {
+      console.warn('[Resend Broadcast] Exception, falling back to Gmail:', err.message || err);
+    }
+  }
+
+  // 2. Gmail SMTP Dispatch
+  const transporter = getTransporter();
+  if (!transporter) {
+    return {
+      success: false,
+      error: 'Neither RESEND_API_KEY nor Gmail SMTP credentials are configured.'
+    };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: `ALGO-RHYTHM <${gmailUser}>`,
+      to: toEmail,
+      subject,
+      html: htmlContent,
+    });
+    return {
+      success: true,
+      messageId: info.messageId
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || String(err)
+    };
   }
 }
 

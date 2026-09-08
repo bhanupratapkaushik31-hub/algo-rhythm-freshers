@@ -41,3 +41,9 @@ yarn-error.log*
 next-env.d.ts
 scratch/
 supabase/.temp/
+
+# mobile app build & dependencies
+coordinator-mobile-app/node_modules/
+coordinator-mobile-app/.expo/
+coordinator-mobile-app/android/
+*.apk

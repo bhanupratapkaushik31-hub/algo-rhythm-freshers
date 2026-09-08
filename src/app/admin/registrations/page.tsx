@@ -118,6 +118,55 @@ export default function AdminRegistrations() {
   const [savingModeling, setSavingModeling] = useState(false);
   const [modelingSaveMsg, setModelingSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Admin Email Edit States
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [editEmailValue, setEditEmailValue] = useState<string>('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSaveMsg, setEmailSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleSaveEmail = async () => {
+    if (!selectedReg) return;
+    const cleanEmail = editEmailValue.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setEmailSaveMsg({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+
+    setSavingEmail(true);
+    setEmailSaveMsg(null);
+    try {
+      const response = await fetch(`/api/admin/registrations/${selectedReg.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail
+        })
+      });
+      const res = await response.json();
+      if (response.ok && res.success) {
+        setEmailSaveMsg({ type: 'success', text: 'Email updated successfully. You can now resend the ticket.' });
+        setSelectedReg(prev => prev ? {
+          ...prev,
+          email: cleanEmail
+        } : null);
+
+        setList(prev => prev.map(r => r.id === selectedReg.id ? {
+          ...r,
+          email: cleanEmail
+        } : r));
+
+        setIsEditingEmail(false);
+      } else {
+        setEmailSaveMsg({ type: 'error', text: res.error?.message || 'Failed to update email.' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setEmailSaveMsg({ type: 'error', text: 'Network error updating email.' });
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
   const handleSaveModeling = async () => {
     if (!selectedReg) return;
     setSavingModeling(true);
@@ -206,6 +255,9 @@ export default function AdminRegistrations() {
     setEditModelingValue(reg.modeling || 'No');
     setEditTalentValue(reg.modeling_talent || '');
     setModelingSaveMsg(null);
+    setIsEditingEmail(false);
+    setEditEmailValue(reg.email || '');
+    setEmailSaveMsg(null);
     setLoadingDetail(true);
     try {
       const response = await fetch(`/api/admin/registrations/${reg.id}`);
@@ -1139,9 +1191,76 @@ export default function AdminRegistrations() {
                     <span className="text-slate-500">Phone:</span>
                     <a href={`tel:${selectedReg.phone}`} className="font-bold text-purple-300 hover:text-purple-200">{selectedReg.phone}</a>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Email:</span>
-                    <span className="font-semibold text-slate-300 truncate max-w-[180px]">{selectedReg.email}</span>
+                  {/* Email Section (with Admin Inline Editing) */}
+                  <div className="border-t border-b border-white/5 py-3 my-1 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-semibold">Email:</span>
+                      {!isEditingEmail ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-300 truncate max-w-[170px]">{selectedReg.email}</span>
+                          <button
+                            onClick={() => {
+                              setEditEmailValue(selectedReg.email || '');
+                              setIsEditingEmail(true);
+                              setEmailSaveMsg(null);
+                            }}
+                            className="p-1 px-2 text-[10px] uppercase tracking-wider font-bold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                            title="Edit student email address"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            Edit
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {isEditingEmail && (
+                      <div className="space-y-2 pt-2 bg-purple-950/20 border border-purple-500/20 p-3 rounded-xl">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">
+                          Correct Email Address:
+                        </label>
+                        <input
+                          type="email"
+                          value={editEmailValue}
+                          onChange={(e) => setEditEmailValue(e.target.value)}
+                          placeholder="name@example.com"
+                          className="w-full bg-black/40 border border-purple-500/30 focus:border-purple-500 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none"
+                        />
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingEmail(false);
+                              setEmailSaveMsg(null);
+                            }}
+                            disabled={savingEmail}
+                            className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-white/10 cursor-pointer disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveEmail}
+                            disabled={savingEmail}
+                            className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg shadow cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                          >
+                            {savingEmail ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Save Email
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {emailSaveMsg && (
+                      <div className={`p-2 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 ${
+                        emailSaveMsg.type === 'success' 
+                          ? 'bg-emerald-950/30 text-emerald-300 border border-emerald-500/20' 
+                          : 'bg-red-950/30 text-red-300 border border-red-500/20'
+                      }`}>
+                        {emailSaveMsg.type === 'success' ? <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />}
+                        <span>{emailSaveMsg.text}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Email Status:</span>

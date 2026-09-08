@@ -16,7 +16,8 @@ import {
   Menu, 
   X,
   Sparkles,
-  Trash2
+  Trash2,
+  Mail
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -148,6 +149,12 @@ export default function AdminLayout({ children, requiredRoles }: AdminLayoutProp
       name: 'Registrations',
       href: '/admin/registrations',
       icon: Users,
+      roles: ['super_admin', 'admin'],
+    },
+    {
+      name: 'Mail System',
+      href: '/admin/mail',
+      icon: Mail,
       roles: ['super_admin', 'admin'],
     },
     {

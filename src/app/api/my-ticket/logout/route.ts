@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const response = NextResponse.redirect(`${appUrl}/my-ticket`);
+  const redirectUrl = new URL('/my-ticket', request.url);
+  const response = NextResponse.redirect(redirectUrl);
   
   response.cookies.delete('ticket_access_session');
   response.cookies.delete('student_phone');
@@ -12,8 +12,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const response = NextResponse.redirect(`${appUrl}/my-ticket`);
+  const redirectUrl = new URL('/my-ticket', request.url);
+  const response = NextResponse.redirect(redirectUrl);
   
   response.cookies.delete('ticket_access_session');
   response.cookies.delete('student_phone');
