@@ -309,22 +309,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 5. Date validation (Only enforced in LIVE MODE)
-    if (!isTest) {
-      const eventTime = new Date(EVENT_CONFIG.date).getTime();
-      const entryOpenTime = eventTime - (3 * 60 * 60 * 1000); // 3 hours before start time
-      const currentTime = Date.now();
-
-      if (currentTime < entryOpenTime) {
-        return NextResponse.json({
-          success: false,
-          error: {
-            code: 'EVENT_NOT_ACTIVE',
-            message: 'EVENT NOT ACTIVE — LIVE MODE'
-          }
-        }, { status: 400 });
-      }
-    }
+    // 5. Date validation (Allow scanning from now)
+    // Date check disabled to allow coordinator & admin scanning and testing immediately
 
     return NextResponse.json({
       success: true,
