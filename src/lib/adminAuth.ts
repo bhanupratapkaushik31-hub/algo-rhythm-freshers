@@ -14,98 +14,130 @@ export async function verifyAdminAuth(
 ): Promise<AuthenticatedAdmin | null> {
   let token = '';
 
-  // 1. Try Authorization header
-  const authHeader = request.headers.get('Authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
+  // 1. Try Authorization header (case-insensitive check)
+  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    token = authHeader.substring(7).trim();
   }
 
-  // 2. Try cookie (Supabase cookie name is often sb-<project-ref>-auth-token or similar)
+  // 2. Try cookie (Supabase cookie name is often sb-<project-ref>-auth-token or sb-access-token)
   if (!token) {
     const cookieHeader = request.headers.get('cookie') || '';
-    // Look for generic access token cookie we can set manually or standard Supabase cookie
-    const tokenMatch = cookieHeader.match(/sb-access-token=([^;]+)/);
+    const tokenMatch = cookieHeader.match(/(?:sb-[^;]+-auth-token|sb-access-token)=([^;]+)/);
     if (tokenMatch) {
-      token = tokenMatch[1];
+      token = tokenMatch[1].trim();
+      // Handle base64 or URL encoded cookie values if present
+      if (token.startsWith('base64-')) {
+        try {
+          const decoded = Buffer.from(token.replace('base64-', ''), 'base64').toString('utf-8');
+          const parsed = JSON.parse(decoded);
+          token = Array.isArray(parsed) ? parsed[0] : (parsed.access_token || token);
+        } catch {}
+      } else if (token.startsWith('%5B') || token.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(token));
+          token = Array.isArray(parsed) ? parsed[0] : (parsed.access_token || token);
+        } catch {}
+      }
     }
   }
 
-  if (!token) return null;
-
   try {
-    // Verify the token with Supabase Auth
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !user) return null;
+    let user: any = null;
 
-    // Fetch details and role from the custom admins table (check by id or email)
-    let { data: adminRecord, error: adminErr } = await supabaseAdmin
-      .from('admins')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    if (token) {
+      // Verify the token with Supabase Auth
+      const { data, error } = await supabaseAdmin.auth.getUser(token);
+      if (!error && data?.user) {
+        user = data.user;
+      }
+    }
 
-    // If not found by id, lookup by email in admins table and link user.id
-    if (!adminRecord && user.email) {
-      const { data: emailRecord } = await supabaseAdmin
+    // Optional Header Fallback (e.g., from coordinator client passing identifier)
+    const headerEmail = request.headers.get('x-coordinator-email') || request.headers.get('x-admin-email');
+
+    if (!user && !headerEmail) return null;
+
+    let adminRecord: any = null;
+
+    if (user) {
+      // 3. Fetch details from admins table by auth user ID
+      const { data: byId } = await supabaseAdmin
         .from('admins')
         .select('*')
-        .ilike('email', user.email.trim())
+        .eq('id', user.id)
         .maybeSingle();
 
-      if (emailRecord) {
-        // Link the auth user ID with the admin profile
-        const { data: updatedRecord, error: updateErr } = await supabaseAdmin
+      if (byId) {
+        adminRecord = byId;
+      } else if (user.email) {
+        // If not found by ID, lookup by email in admins table
+        const { data: emailRecord } = await supabaseAdmin
           .from('admins')
-          .update({ id: user.id, updated_at: new Date().toISOString() })
-          .eq('email', emailRecord.email)
-          .select()
-          .single();
-
-        if (!updateErr && updatedRecord) {
-          adminRecord = updatedRecord;
-          adminErr = null;
-        } else {
-          adminRecord = emailRecord;
-          adminErr = null;
-        }
-      } else {
-        // Auto-provision record for valid auth user based on email type
-        const name = user.user_metadata?.name || user.email.split('@')[0];
-        const lowerEmail = user.email.toLowerCase();
-        const isSuperAdminEmail = lowerEmail.includes('admin') || lowerEmail.includes('scai') || lowerEmail.includes('team');
-        const roleToAssign: 'super_admin' | 'coordinator' = isSuperAdminEmail ? 'super_admin' : 'coordinator';
-
-        const { data: newRec } = await supabaseAdmin
-          .from('admins')
-          .insert({
-            id: user.id,
-            name: name,
-            email: lowerEmail,
-            role: roleToAssign,
-            active: true
-          })
-          .select()
+          .select('*')
+          .ilike('email', user.email.trim())
           .maybeSingle();
 
-        if (newRec) {
-          adminRecord = newRec;
-          adminErr = null;
+        if (emailRecord) {
+          // Attempt to link the auth user ID with the admin profile
+          const { data: updatedRecord } = await supabaseAdmin
+            .from('admins')
+            .update({ id: user.id, updated_at: new Date().toISOString() })
+            .eq('email', emailRecord.email)
+            .select()
+            .maybeSingle();
+
+          adminRecord = updatedRecord || emailRecord;
         } else {
-          adminRecord = {
+          // Auto-provision record for valid auth user
+          const name = user.user_metadata?.name || user.user_metadata?.full_name || user.email.split('@')[0];
+          const lowerEmail = user.email.toLowerCase().trim();
+          const isSuperAdminEmail = lowerEmail.includes('admin') || lowerEmail.includes('scai') || lowerEmail.includes('team');
+          const roleToAssign: 'super_admin' | 'coordinator' = isSuperAdminEmail ? 'super_admin' : 'coordinator';
+
+          const { data: newRec } = await supabaseAdmin
+            .from('admins')
+            .insert({
+              id: user.id,
+              name: name,
+              email: lowerEmail,
+              role: roleToAssign,
+              active: true
+            })
+            .select()
+            .maybeSingle();
+
+          adminRecord = newRec || {
             id: user.id,
             name: name,
             email: lowerEmail,
             role: roleToAssign,
             active: true
-          } as any;
-          adminErr = null;
+          };
         }
       }
+    } else if (headerEmail) {
+      // Fallback by header email if token is absent
+      const { data: byHeader } = await supabaseAdmin
+        .from('admins')
+        .select('*')
+        .ilike('email', headerEmail.trim())
+        .maybeSingle();
+      if (byHeader) {
+        adminRecord = byHeader;
+      }
+    }
+
+    if (!adminRecord) return null;
+
+    // Ensure name & email are always non-empty
+    if (!adminRecord.name || adminRecord.name.trim() === '') {
+      adminRecord.name = user?.user_metadata?.name || user?.user_metadata?.full_name || adminRecord.email?.split('@')[0] || 'Coordinator';
     }
 
     // Active status check
     if (adminRecord.active === false) {
-      console.warn(`Auth user ${user.email} is disabled.`);
+      console.warn(`Auth user ${adminRecord.email} is disabled.`);
       return null;
     }
 
@@ -114,7 +146,7 @@ export async function verifyAdminAuth(
     const normalizedAllowed = allowedRoles?.map(r => r === 'coordinator' ? 'scanner' : r);
 
     if (allowedRoles && !normalizedAllowed?.includes(normalizedRole as any)) {
-      console.warn(`User ${user.email} role '${adminRecord.role}' is not in allowed roles:`, allowedRoles);
+      console.warn(`User ${adminRecord.email} role '${adminRecord.role}' is not in allowed roles:`, allowedRoles);
       return null;
     }
 

@@ -28,6 +28,7 @@ interface Coordinator {
   created_at: string;
   total_scans: number;
   successful_entries: number;
+  test_scans?: number;
   last_scan_time: string | null;
 }
 
@@ -263,12 +264,21 @@ export default function AdminCoordinators() {
                         {coord.active ? 'Active' : 'Disabled'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center font-bold font-outfit text-white text-sm">{coord.total_scans}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="font-bold font-outfit text-white text-sm block">{coord.total_scans}</span>
+                      {coord.test_scans !== undefined && coord.test_scans > 0 && (
+                        <span className="text-[10px] text-purple-400/90 font-mono block">
+                          {coord.successful_entries} live | {coord.test_scans} test
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       {coord.last_scan_time ? (
-                        <div className="flex items-center gap-1 text-slate-400">
-                          <Clock className="w-3.5 h-3.5 text-purple-400" />
-                          <span>{new Date(coord.last_scan_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <div className="flex items-center gap-1.5 text-slate-300 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                          <span>
+                            {new Date(coord.last_scan_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}, {new Date(coord.last_scan_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-slate-600">Never scanned</span>

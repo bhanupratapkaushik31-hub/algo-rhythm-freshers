@@ -27,48 +27,83 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 3. Fetch entries to compute metrics (with fallback for missing coordinator_id/is_test columns)
+    // 3. Fetch entries to compute metrics
     let entries: any[] = [];
     const { data: entriesWithCoord, error: entriesErr } = await supabaseAdmin
       .from('entries')
-      .select('coordinator_id, scanned_by, entry_time')
-      .eq('is_test', false);
+      .select('coordinator_id, scanned_by, entry_time, scanned_at, is_test');
 
     if (entriesErr) {
       console.warn('Fetch entries with coordinator_id/is_test failed, trying legacy fallback:', entriesErr.message);
       const { data: entriesFallback, error: fallbackErr } = await supabaseAdmin
         .from('entries')
-        .select('scanned_by, entry_time')
-        .eq('entry_status', 'ENTERED');
+        .select('scanned_by, entry_time, scanned_at');
 
-      if (fallbackErr) {
-        console.error('Fetch entries fallback DB error:', fallbackErr);
-        return NextResponse.json({
-          success: false,
-          error: { code: 'DATABASE_ERROR', message: 'Failed to retrieve entry logs.' }
-        }, { status: 500 });
+      if (!fallbackErr && entriesFallback) {
+        entries = entriesFallback.map((e: any) => ({ ...e, coordinator_id: null }));
       }
-      entries = (entriesFallback || []).map((e: any) => ({ ...e, coordinator_id: null }));
     } else {
       entries = entriesWithCoord || [];
     }
 
+    // 4. Fetch test QR scan history from settings
+    let testScans: any[] = [];
+    try {
+      const { data: testSetting } = await supabaseAdmin
+        .from('settings')
+        .select('value')
+        .eq('key', 'admin_test_qr_scans')
+        .maybeSingle();
+
+      if (testSetting?.value && Array.isArray((testSetting.value as any).scans)) {
+        testScans = (testSetting.value as any).scans;
+      }
+    } catch (err) {
+      console.warn('Fetch admin_test_qr_scans setting note:', err);
+    }
+
     // Map metrics for each coordinator
     const data = (coordinators || []).map((c: any) => {
-      // Find entries scanned by this coordinator (using ID or Email)
-      const scanned = (entries || []).filter((e: any) => 
-        e.coordinator_id === c.id || 
-        (e.scanned_by && e.scanned_by.toLowerCase() === c.email.toLowerCase())
-      );
+      const cEmail = (c.email || '').toLowerCase().trim();
+      const cName = (c.name || '').toLowerCase().trim();
+      const cId = c.id ? String(c.id) : '';
 
-      const successCount = scanned.length;
+      // Find live entries scanned by this coordinator (using ID or Email or Name)
+      const liveScans = (entries || []).filter((e: any) => {
+        if (e.is_test) return false;
+        if (cId && e.coordinator_id && String(e.coordinator_id) === cId) return true;
+        const scannedBy = (e.scanned_by || '').toLowerCase().trim();
+        if (cEmail && scannedBy.includes(cEmail)) return true;
+        if (cName && scannedBy.includes(cName)) return true;
+        return false;
+      });
+
+      // Find test scans performed by this coordinator
+      const coordTestScans = testScans.filter((s: any) => {
+        if (cId && s.coordinator_id && String(s.coordinator_id) === cId) return true;
+        const sEmail = (s.coordinator_email || '').toLowerCase().trim();
+        const sName = (s.coordinator_name || '').toLowerCase().trim();
+        if (cEmail && sEmail === cEmail) return true;
+        if (cName && sName === cName) return true;
+        return false;
+      });
+
+      const liveCount = liveScans.length;
+      const testCount = coordTestScans.length;
+      const totalScans = liveCount + testCount;
       
-      // Get last scan time
-      let lastScanTime = null;
-      if (scanned.length > 0) {
-        const times = scanned.map((s: any) => new Date(s.entry_time).getTime());
-        lastScanTime = new Date(Math.max(...times)).toISOString();
-      }
+      // Calculate last scan timestamp from all scans
+      const allTimes: number[] = [];
+      liveScans.forEach((s: any) => {
+        const t = new Date(s.entry_time || s.scanned_at).getTime();
+        if (!isNaN(t)) allTimes.push(t);
+      });
+      coordTestScans.forEach((s: any) => {
+        const t = new Date(s.scanned_at).getTime();
+        if (!isNaN(t)) allTimes.push(t);
+      });
+
+      const lastScanTime = allTimes.length > 0 ? new Date(Math.max(...allTimes)).toISOString() : null;
 
       return {
         id: c.id,
@@ -77,9 +112,10 @@ export async function GET(request: NextRequest) {
         role: c.role,
         active: c.active !== false,
         created_at: c.created_at,
-        total_scans: successCount, // successful scans
-        successful_entries: successCount,
-        duplicate_attempts: 0, // database unique constraint blocks these from being written
+        total_scans: totalScans, // successful scans (live + test)
+        successful_entries: liveCount,
+        test_scans: testCount,
+        duplicate_attempts: 0,
         invalid_tickets: 0,
         last_scan_time: lastScanTime
       };

@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
 
     const timestamp = new Date().toISOString();
     let entryRecord = null;
+    const coordinatorIdentifier = admin.name ? `${admin.name} (${admin.email})` : admin.email;
 
     if (markAction === 'ENTRY') {
       // 3a. Insert check-in record in entries table
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
           ticket_id: reg.ticket_id,
           coordinator_id: admin.id,
           entry_status: 'ENTERED',
-          scanned_by: admin.name || admin.email || 'Admin Staff',
+          scanned_by: coordinatorIdentifier,
           scanner_device: scanner_device || 'Web Browser',
           scanned_at: timestamp,
           entry_time: timestamp,
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
         .from('entries')
         .update({
           entry_status: 'RE_ENTERED',
-          scanned_by: admin.name || admin.email || 'Admin Staff',
+          scanned_by: coordinatorIdentifier,
           scanner_device: scanner_device || 'Web Browser',
           scanned_at: timestamp,
           coordinator_id: admin.id
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
       .insert({
         registration_id: registration_id,
         action: markAction,
-        scanned_by: admin.name || admin.email || 'Admin Staff',
+        scanned_by: coordinatorIdentifier,
         scanner_device: scanner_device || 'Web Browser',
         scanned_at: timestamp
       });

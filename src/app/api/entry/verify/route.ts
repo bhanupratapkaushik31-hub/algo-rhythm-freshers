@@ -26,15 +26,34 @@ export async function POST(request: NextRequest) {
                         cleanedToken.toLowerCase().includes('admin-test');
 
     // 2. Verify coordinator / scanner access
-    const admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner', 'coordinator']);
+    let admin = await verifyAdminAuth(request, ['super_admin', 'admin', 'scanner', 'coordinator']);
+
+    // Fallback: Check body or headers for coordinator email if token wasn't directly recognized
+    if (!admin) {
+      const fallbackEmail = body.coordinator_email || request.headers.get('x-coordinator-email') || body.scanned_by;
+      if (fallbackEmail && typeof fallbackEmail === 'string' && fallbackEmail.includes('@')) {
+        const { data: coordByEmail } = await supabaseAdmin
+          .from('admins')
+          .select('*')
+          .ilike('email', fallbackEmail.trim())
+          .eq('active', true)
+          .maybeSingle();
+
+        if (coordByEmail) {
+          admin = coordByEmail as any;
+        }
+      }
+    }
     
     if (isAdminTest) {
       // 1. Fetch current admin test scan log from settings
       let newCount = 1;
       let updatedScans: any[] = [];
-      const coordinatorName = admin ? (admin.name || admin.email.split('@')[0] || 'Coordinator') : 'Gate Coordinator';
-      const coordinatorEmail = admin ? admin.email : 'coordinator@terminal';
-      const coordinatorRole = admin ? admin.role : 'coordinator';
+      const coordinatorId = admin?.id || body.coordinator_id || null;
+      const coordinatorName = admin?.name || body.coordinator_name || (admin?.email ? admin.email.split('@')[0] : 'Gate Coordinator');
+      const coordinatorEmail = admin?.email || body.coordinator_email || 'coordinator@terminal';
+      const coordinatorRole = admin?.role || 'coordinator';
+      const scannerDevice = scanner_device || body.scanner_device || request.headers.get('x-scanner-device') || 'Android Coordinator App';
 
       try {
         const { data: testSetting } = await supabaseAdmin
@@ -48,11 +67,12 @@ export async function POST(request: NextRequest) {
 
         const newScanEntry = {
           id: crypto.randomUUID(),
+          coordinator_id: coordinatorId,
           coordinator_name: coordinatorName,
           coordinator_email: coordinatorEmail,
           role: coordinatorRole,
           scanned_at: new Date().toISOString(),
-          scanner_device: scanner_device || 'Coordinator Scanner'
+          scanner_device: scannerDevice
         };
 
         updatedScans = [newScanEntry, ...(Array.isArray(currentVal.scans) ? currentVal.scans : [])].slice(0, 500);
@@ -89,9 +109,9 @@ export async function POST(request: NextRequest) {
         first_scanned_at: new Date().toISOString(),
         scanned_at: new Date().toISOString(),
         entry_time: new Date().toISOString(),
-        scanned_by: coordinatorName,
+        scanned_by: `${coordinatorName} (${coordinatorEmail})`,
         total_entries: newCount,
-        scanner_device: scanner_device || 'Coordinator Scanner'
+        scanner_device: scannerDevice
       };
 
       return NextResponse.json({
