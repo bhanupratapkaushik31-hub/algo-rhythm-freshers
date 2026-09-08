@@ -41,24 +41,6 @@ function getTransporter() {
 export const CANONICAL_APP_URL = 'https://algo-rhythm-freshers.vercel.app';
 
 function getAppUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  // If NEXT_PUBLIC_APP_URL is explicitly set to a live non-localhost domain
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1') && envUrl.startsWith('http')) {
-    return envUrl.replace(/\/+$/, '');
-  }
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-    const vProd = process.env.VERCEL_PROJECT_PRODUCTION_URL.trim();
-    if (vProd && !vProd.includes('localhost')) {
-      return `https://${vProd.replace(/\/+$/, '')}`;
-    }
-  }
-  if (process.env.VERCEL_URL) {
-    const vUrl = process.env.VERCEL_URL.trim();
-    if (vUrl && !vUrl.includes('localhost')) {
-      return `https://${vUrl.replace(/\/+$/, '')}`;
-    }
-  }
-  // Hardcoded guarantee: all emails will always link to the live production deployment
   return CANONICAL_APP_URL;
 }
 
