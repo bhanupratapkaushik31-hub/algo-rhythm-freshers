@@ -107,14 +107,29 @@ export const AuthService = {
   },
 
   /**
-   * Get active access token
+   * Get stored coordinator profile
+   */
+  async getStoredProfile(): Promise<CoordinatorProfile | null> {
+    try {
+      const stored = await AsyncStorage.getItem(APP_CONFIG.PROFILE_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Get active access token with auto-refresh
    */
   async getAccessToken(): Promise<string | null> {
     try {
-      const storedToken = await AsyncStorage.getItem(APP_CONFIG.AUTH_STORAGE_KEY);
-      if (storedToken) return storedToken;
+      // Always prioritize active session from Supabase
       const { data: { session } } = await supabase.auth.getSession();
-      return session?.access_token || null;
+      if (session?.access_token) {
+        await AsyncStorage.setItem(APP_CONFIG.AUTH_STORAGE_KEY, session.access_token);
+        return session.access_token;
+      }
+      return await AsyncStorage.getItem(APP_CONFIG.AUTH_STORAGE_KEY);
     } catch {
       return null;
     }

@@ -133,45 +133,59 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     setErrorMsg(null);
     playHaptic('medium');
 
-    const res = await EntryService.verifyTicket(token);
-
-    if (!res.success) {
-      playHaptic('error');
-      if (res.error?.code === 'UNPAID_TICKET') {
-        setScanState('UNPAID');
-        setStudent(res.data?.student || res.student || null);
-      } else {
-        setScanState('INVALID');
-        setErrorMsg(res.error?.message || 'Invalid or unregistered QR code.');
+    try {
+      let clean = token.trim();
+      if (clean.includes('/ticket/')) {
+        clean = clean.split('/ticket/').pop()?.split('?')[0]?.split('#')[0] || clean;
       }
-      return;
-    }
 
-    const resultData = res.data || res;
-    const resolvedStudent = resultData.student || res.student;
-    const resolvedStatus = resultData.status || res.status;
-    const resolvedEntryDetails = resultData.entry_details || res.entry_details;
-    const isTest = !!resultData.is_test;
+      const res = await EntryService.verifyTicket(clean);
 
-    setStudent(resolvedStudent);
-    setEntryDetails(resolvedEntryDetails);
-    setIsTestModeScanned(isTest);
+      if (!res.success) {
+        playHaptic('error');
+        if (res.error?.code === 'UNPAID_TICKET') {
+          setScanState('UNPAID');
+          setStudent(res.data?.student || res.student || null);
+        } else {
+          setScanState('INVALID');
+          setErrorMsg(res.error?.message || 'Invalid or unregistered QR code.');
+        }
+        scheduleAutoReset(3500);
+        return;
+      }
 
-    if (resolvedStatus === 'MARKED') {
-      playHaptic('success');
-      setScanState('MARKED');
-      fetchStats();
-      scheduleAutoReset(3500);
-    } else if (resolvedStatus === 'ALREADY_ENTERED') {
-      playHaptic('warning');
-      setScanState('ALREADY_ENTERED');
-    } else if (resolvedStatus === 'PENDING_CONFIRMATION' || resolvedStudent) {
-      playHaptic('medium');
-      setScanState('PENDING_CONFIRMATION');
-    } else {
+      const resultData = res.data || res;
+      const resolvedStudent = resultData.student || res.student;
+      const resolvedStatus = resultData.status || res.status;
+      const resolvedEntryDetails = resultData.entry_details || res.entry_details;
+      const isTest = !!resultData.is_test;
+
+      setStudent(resolvedStudent);
+      setEntryDetails(resolvedEntryDetails);
+      setIsTestModeScanned(isTest);
+
+      if (resolvedStatus === 'MARKED') {
+        playHaptic('success');
+        setScanState('MARKED');
+        fetchStats();
+        scheduleAutoReset(3500);
+      } else if (resolvedStatus === 'ALREADY_ENTERED') {
+        playHaptic('warning');
+        setScanState('ALREADY_ENTERED');
+      } else if (resolvedStatus === 'PENDING_CONFIRMATION' || resolvedStudent) {
+        playHaptic('medium');
+        setScanState('PENDING_CONFIRMATION');
+      } else {
+        playHaptic('error');
+        setScanState('INVALID');
+        setErrorMsg('Unexpected ticket response.');
+        scheduleAutoReset(3500);
+      }
+    } catch (err: any) {
       playHaptic('error');
       setScanState('INVALID');
-      setErrorMsg('Unexpected ticket response.');
+      setErrorMsg(err?.message || 'Verification network error.');
+      scheduleAutoReset(3500);
     }
   };
 
@@ -190,7 +204,11 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     lastScannedTokenRef.current = clean;
     lastScanTimeRef.current = now;
 
-    await processTokenVerification(clean);
+    try {
+      await processTokenVerification(clean);
+    } catch (e) {
+      isProcessingRef.current = false;
+    }
   };
 
   const handleManualSubmit = async () => {
@@ -199,7 +217,11 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     setManualModalVisible(false);
     setManualToken('');
     isProcessingRef.current = true;
-    await processTokenVerification(token);
+    try {
+      await processTokenVerification(token);
+    } catch (e) {
+      isProcessingRef.current = false;
+    }
   };
 
   const handleMarkEntry = async (actionType: 'ENTRY' | 'RE_ENTRY') => {
@@ -219,12 +241,14 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
         playHaptic('error');
         setScanState('INVALID');
         setErrorMsg(res.error?.message || 'Failed to mark entry check-in.');
+        scheduleAutoReset(3500);
       }
     } catch (err: any) {
       setMarkingEntry(false);
       playHaptic('error');
       setScanState('INVALID');
       setErrorMsg(err?.message || 'Network connectivity error.');
+      scheduleAutoReset(3500);
     }
   };
 
