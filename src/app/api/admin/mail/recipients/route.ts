@@ -77,17 +77,23 @@ export async function GET(request: NextRequest) {
       console.warn('Mail stats calculation error:', statsError);
     }
 
-    const activeList = allActive || [];
-    const paidList = activeList.filter(r => r.registration_status === 'PAID');
+    const activeList: Array<{
+      id: string;
+      registration_status: string;
+      modeling?: string | null;
+      email_status?: string | null;
+      email_sent?: boolean | null;
+    }> = allActive || [];
+    const paidList = activeList.filter((r) => r.registration_status === 'PAID');
     
     const stats = {
       totalActive: activeList.length,
       totalPaid: paidList.length,
-      modelingYesCount: paidList.filter(r => r.modeling === 'Yes').length,
-      modelingNoCount: paidList.filter(r => r.modeling === 'No').length,
-      emailSentCount: paidList.filter(r => r.email_status === 'SENT' || r.email_sent).length,
-      emailFailedCount: paidList.filter(r => r.email_status === 'FAILED').length,
-      emailPendingCount: paidList.filter(r => (!r.email_status || r.email_status === 'PENDING') && !r.email_sent).length,
+      modelingYesCount: paidList.filter((r) => r.modeling === 'Yes').length,
+      modelingNoCount: paidList.filter((r) => r.modeling === 'No').length,
+      emailSentCount: paidList.filter((r) => r.email_status === 'SENT' || r.email_sent).length,
+      emailFailedCount: paidList.filter((r) => r.email_status === 'FAILED').length,
+      emailPendingCount: paidList.filter((r) => (!r.email_status || r.email_status === 'PENDING') && !r.email_sent).length,
       filteredCount: recipients?.length || 0
     };
 

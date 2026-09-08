@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       if (!personalizedHtml.includes('<p>') && !personalizedHtml.includes('<div>') && !personalizedHtml.includes('<br')) {
         personalizedHtml = personalizedHtml
           .split('\n\n')
-          .map(paragraph => `<p style="margin-bottom: 14px; line-height: 1.6;">${paragraph.replace(/\n/g, '<br/>')}</p>`)
+          .map((paragraph: string) => `<p style="margin-bottom: 14px; line-height: 1.6;">${paragraph.replace(/\n/g, '<br/>')}</p>`)
           .join('');
       }
 
