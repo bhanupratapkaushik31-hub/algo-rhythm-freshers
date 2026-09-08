@@ -139,8 +139,10 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // 1-second throttle interval to protect Gmail from rate limiting / spam bans
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Throttling for batch requests
+      if (records.length > 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
 
     return NextResponse.json({

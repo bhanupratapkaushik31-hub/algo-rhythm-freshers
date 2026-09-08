@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { 
   Mail, 
@@ -16,15 +16,23 @@ import {
   Eye, 
   Ticket, 
   ArrowRight,
-  Loader2,
-  Check,
-  Megaphone,
-  UserCheck,
-  Layers,
-  FileText,
-  Clock,
-  ShieldCheck,
-  ExternalLink
+  Loader2, 
+  Check, 
+  Megaphone, 
+  UserCheck, 
+  Layers, 
+  FileText, 
+  Clock, 
+  ShieldCheck, 
+  ExternalLink,
+  Pause,
+  Play,
+  RotateCcw,
+  Trash2,
+  Shield,
+  Zap,
+  CheckCheck,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -57,12 +65,17 @@ interface MailStats {
   filteredCount: number;
 }
 
-interface DispatchResult {
+interface QueueItem {
   id: string;
   name: string;
   email: string;
-  success: boolean;
+  regNo: string;
+  year: string;
+  modeling: string;
+  ticketId: string | null;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
   error?: string;
+  sentAt?: string;
 }
 
 export default function AdminMailSystemPage() {
@@ -94,17 +107,32 @@ export default function AdminMailSystemPage() {
   const [broadcastButtonUrl, setBroadcastButtonUrl] = useState('https://algo-rhythm-freshers.vercel.app/my-ticket');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
-  // Dispatch Execution & Progress States
-  const [isDispatching, setIsDispatching] = useState(false);
-  const [dispatchProgress, setDispatchProgress] = useState<{
-    total: number;
-    completed: number;
-    sent: number;
-    failed: number;
-  } | null>(null);
-  const [dispatchResults, setDispatchResults] = useState<DispatchResult[]>([]);
-  const [showResultsModal, setShowResultsModal] = useState(false);
+  // Single Dispatch State
   const [singleDispatchingId, setSingleDispatchingId] = useState<string | null>(null);
+
+  // ==========================================
+  // LIVE QUEUE DISPATCH HUB STATES & REFS
+  // ==========================================
+  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+  const [queueMode, setQueueMode] = useState<'tickets' | 'broadcast'>('tickets');
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [isQueueRunning, setIsQueueRunning] = useState(false);
+  const [isQueuePaused, setIsQueuePaused] = useState(false);
+  const [countdown, setCountdown] = useState<number>(0);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [queueFilterTab, setQueueFilterTab] = useState<'remaining' | 'sent' | 'failed' | 'all'>('remaining');
+
+  // Stable execution refs
+  const queueRef = useRef<QueueItem[]>([]);
+  const isRunningRef = useRef(false);
+  const isPausedRef = useRef(false);
+  const cancelRef = useRef(false);
+  const modeRef = useRef<'tickets' | 'broadcast'>('tickets');
+
+  // Keep queueRef synced with queueItems for external updates
+  useEffect(() => {
+    queueRef.current = queueItems;
+  }, [queueItems]);
 
   // 1. Fetch Recipients & Stats
   const fetchRecipients = async () => {
@@ -246,118 +274,236 @@ export default function AdminMailSystemPage() {
     }
   };
 
-  // Dispatch Bulk Ticket Resend
-  const handleBulkTicketDispatch = async () => {
-    const idsToSend = Array.from(selectedIds);
-    if (idsToSend.length === 0) {
-      alert('Please select at least one student to send ticket emails to.');
-      return;
-    }
-
-    const confirmMsg = `Are you sure you want to resend official tickets with the corrected production URL to ${idsToSend.length} selected student(s)?\n\n• Delivery pacing: 1 email per second (protects Gmail deliverability)\n• Estimated duration: ~${Math.ceil(idsToSend.length / 60)} minute(s)`;
-    if (!window.confirm(confirmMsg)) return;
-
-    setIsDispatching(true);
-    setDispatchProgress({
-      total: idsToSend.length,
-      completed: 0,
-      sent: 0,
-      failed: 0
-    });
-    setDispatchResults([]);
-
-    try {
-      const response = await fetch('/api/admin/mail/send-tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ registrationIds: idsToSend })
-      });
-      const res = await response.json();
-
-      if (response.ok && res.success) {
-        setDispatchResults(res.data.results || []);
-        setDispatchProgress({
-          total: res.data.totalProcessed,
-          completed: res.data.totalProcessed,
-          sent: res.data.sent,
-          failed: res.data.failed
-        });
-        setShowResultsModal(true);
-        fetchRecipients();
-      } else {
-        alert(res.error?.message || 'Bulk ticket dispatch failed.');
+  // =========================================================
+  // LIVE QUEUE ENGINE WITH 5-SECOND GMAIL DELAY
+  // =========================================================
+  const runQueueLoop = async () => {
+    while (isRunningRef.current) {
+      if (isPausedRef.current || cancelRef.current) {
+        isRunningRef.current = false;
+        setIsQueueRunning(false);
+        break;
       }
-    } catch (err) {
-      alert('Network error during bulk ticket dispatch.');
-    } finally {
-      setIsDispatching(false);
+
+      // Find next pending item
+      const nextIdx = queueRef.current.findIndex(item => item.status === 'PENDING');
+      if (nextIdx === -1) {
+        // All pending items processed!
+        isRunningRef.current = false;
+        setIsQueueRunning(false);
+        setIsQueuePaused(false);
+        fetchRecipients();
+        break;
+      }
+
+      const item = queueRef.current[nextIdx];
+
+      // Mark as SENDING
+      queueRef.current[nextIdx] = { ...item, status: 'SENDING', error: undefined };
+      setQueueItems([...queueRef.current]);
+      setActiveItemId(item.id);
+
+      try {
+        let isSuccess = false;
+        let errorReason = '';
+
+        if (modeRef.current === 'tickets') {
+          const res = await fetch('/api/admin/mail/send-tickets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ registrationIds: [item.id] })
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.data?.sent > 0) {
+            isSuccess = true;
+          } else {
+            errorReason = data.data?.results?.[0]?.error || data.error?.message || 'Ticket dispatch failed';
+          }
+        } else {
+          const res = await fetch('/api/admin/mail/send-custom', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              registrationIds: [item.id],
+              subject: broadcastSubject,
+              message: broadcastMessage,
+              senderTitle: broadcastSenderTitle,
+              buttonText: broadcastButtonText,
+              buttonUrl: broadcastButtonUrl
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.data?.sent > 0) {
+            isSuccess = true;
+          } else {
+            errorReason = data.data?.results?.[0]?.error || data.error?.message || 'Broadcast dispatch failed';
+          }
+        }
+
+        if (isSuccess) {
+          queueRef.current[nextIdx] = {
+            ...queueRef.current[nextIdx],
+            status: 'SENT',
+            sentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          };
+        } else {
+          queueRef.current[nextIdx] = {
+            ...queueRef.current[nextIdx],
+            status: 'FAILED',
+            error: errorReason
+          };
+        }
+      } catch (err: any) {
+        queueRef.current[nextIdx] = {
+          ...queueRef.current[nextIdx],
+          status: 'FAILED',
+          error: err?.message || 'Network / connection failure'
+        };
+      }
+
+      setQueueItems([...queueRef.current]);
+      setActiveItemId(null);
+
+      // Check if more pending items exist
+      const hasMorePending = queueRef.current.some(it => it.status === 'PENDING');
+      if (hasMorePending && isRunningRef.current && !isPausedRef.current && !cancelRef.current) {
+        // 5-second pacing countdown
+        for (let sec = 5; sec > 0; sec--) {
+          if (!isRunningRef.current || isPausedRef.current || cancelRef.current) break;
+          setCountdown(sec);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setCountdown(0);
+      }
     }
   };
 
-  // Dispatch Custom Broadcast Email
-  const handleCustomBroadcastDispatch = async () => {
-    const idsToSend = Array.from(selectedIds);
-    if (idsToSend.length === 0) {
-      alert('Please select at least one student recipient for this broadcast.');
+  // Launch Queue Dispatch
+  const launchDispatchQueue = (mode: 'tickets' | 'broadcast') => {
+    const selectedList = recipients.filter(r => selectedIds.has(r.id));
+    if (selectedList.length === 0) {
+      alert('Please select at least one student recipient first.');
       return;
     }
 
-    if (!broadcastSubject.trim()) {
-      alert('Please provide an email subject.');
-      return;
-    }
-
-    if (!broadcastMessage.trim()) {
-      alert('Please provide an email message body.');
-      return;
-    }
-
-    const confirmMsg = `Send this announcement broadcast to ${idsToSend.length} selected attendee(s)?\n\nSubject: "${broadcastSubject}"\n• Delivery pacing: 1 email per second (protects Gmail deliverability)\n• Estimated duration: ~${Math.ceil(idsToSend.length / 60)} minute(s)`;
-    if (!window.confirm(confirmMsg)) return;
-
-    setIsDispatching(true);
-    setDispatchProgress({
-      total: idsToSend.length,
-      completed: 0,
-      sent: 0,
-      failed: 0
-    });
-    setDispatchResults([]);
-
-    try {
-      const response = await fetch('/api/admin/mail/send-custom', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          registrationIds: idsToSend,
-          subject: broadcastSubject,
-          message: broadcastMessage,
-          senderTitle: broadcastSenderTitle,
-          buttonText: broadcastButtonText,
-          buttonUrl: broadcastButtonUrl
-        })
-      });
-      const res = await response.json();
-
-      if (response.ok && res.success) {
-        setDispatchResults(res.data.results || []);
-        setDispatchProgress({
-          total: res.data.totalProcessed,
-          completed: res.data.totalProcessed,
-          sent: res.data.sent,
-          failed: res.data.failed
-        });
-        setShowResultsModal(true);
-        fetchRecipients();
-      } else {
-        alert(res.error?.message || 'Broadcast dispatch failed.');
+    if (mode === 'broadcast') {
+      if (!broadcastSubject.trim()) {
+        alert('Please specify an email subject for your broadcast.');
+        return;
       }
-    } catch (err) {
-      alert('Network error during broadcast dispatch.');
-    } finally {
-      setIsDispatching(false);
+      if (!broadcastMessage.trim()) {
+        alert('Please enter a message body for your broadcast.');
+        return;
+      }
     }
+
+    const items: QueueItem[] = selectedList.map(r => ({
+      id: r.id,
+      name: r.full_name,
+      email: r.email,
+      regNo: r.registration_number,
+      year: r.year,
+      modeling: r.modeling,
+      ticketId: r.ticket_id,
+      status: 'PENDING'
+    }));
+
+    queueRef.current = items;
+    setQueueItems(items);
+    modeRef.current = mode;
+    setQueueMode(mode);
+
+    isRunningRef.current = true;
+    isPausedRef.current = false;
+    cancelRef.current = false;
+
+    setIsQueueRunning(true);
+    setIsQueuePaused(false);
+    setQueueFilterTab('remaining');
+    setIsQueueModalOpen(true);
+
+    runQueueLoop();
   };
+
+  const handlePauseQueue = () => {
+    isPausedRef.current = true;
+    setIsQueuePaused(true);
+    setIsQueueRunning(false);
+  };
+
+  const handleResumeQueue = () => {
+    isPausedRef.current = false;
+    cancelRef.current = false;
+    isRunningRef.current = true;
+    setIsQueuePaused(false);
+    setIsQueueRunning(true);
+    runQueueLoop();
+  };
+
+  // Resend / Retry Remaining Handler
+  const handleResendRemaining = () => {
+    // Convert all FAILED items back to PENDING so they are retried
+    queueRef.current = queueRef.current.map(item => 
+      item.status === 'FAILED' ? { ...item, status: 'PENDING', error: undefined } : item
+    );
+    setQueueItems([...queueRef.current]);
+
+    isPausedRef.current = false;
+    cancelRef.current = false;
+    isRunningRef.current = true;
+
+    setIsQueuePaused(false);
+    setIsQueueRunning(true);
+    setQueueFilterTab('remaining');
+
+    runQueueLoop();
+  };
+
+  // Remove individual student from Queue
+  const handleRemoveItem = (id: string) => {
+    queueRef.current = queueRef.current.filter(item => item.id !== id);
+    setQueueItems([...queueRef.current]);
+  };
+
+  // Close & Refresh
+  const handleCloseQueueModal = () => {
+    if (isQueueRunning) {
+      if (!window.confirm('Dispatch is currently running. Are you sure you want to stop the queue and close this window?')) {
+        return;
+      }
+    }
+    cancelRef.current = true;
+    isRunningRef.current = false;
+    setIsQueueRunning(false);
+    setIsQueueModalOpen(false);
+    fetchRecipients();
+  };
+
+  // Queue Statistics Computation
+  const queueStats = useMemo(() => {
+    const total = queueItems.length;
+    const sent = queueItems.filter(i => i.status === 'SENT').length;
+    const failed = queueItems.filter(i => i.status === 'FAILED').length;
+    const pending = queueItems.filter(i => i.status === 'PENDING').length;
+    const sending = queueItems.filter(i => i.status === 'SENDING').length;
+    const remaining = pending + failed + sending;
+    const percent = total > 0 ? Math.round((sent / total) * 100) : 0;
+    return { total, sent, failed, pending, sending, remaining, percent };
+  }, [queueItems]);
+
+  // Displayed Items based on Tab
+  const displayedQueueItems = useMemo(() => {
+    if (queueFilterTab === 'remaining') {
+      return queueItems.filter(i => i.status === 'PENDING' || i.status === 'FAILED' || i.status === 'SENDING');
+    }
+    if (queueFilterTab === 'sent') {
+      return queueItems.filter(i => i.status === 'SENT');
+    }
+    if (queueFilterTab === 'failed') {
+      return queueItems.filter(i => i.status === 'FAILED');
+    }
+    return queueItems;
+  }, [queueItems, queueFilterTab]);
 
   return (
     <AdminLayout requiredRoles={['super_admin', 'admin']}>
@@ -598,86 +744,68 @@ export default function AdminMailSystemPage() {
             <Filter className="w-3 h-3" />
             Quick Presets:
           </span>
+
           <button
+            type="button"
             onClick={() => applyPreset('ALL_PAID')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              paymentStatusFilter === 'PAID' && modelingFilter === 'All' && yearFilter === 'All' && emailStatusFilter === 'All'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
-                : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
-            }`}
+            className="px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/20 transition-all cursor-pointer"
           >
-            All Confirmed Paid ({stats?.totalPaid ?? 0})
+            All Paid ({stats?.totalPaid || 0})
           </button>
+
           <button
-            onClick={() => applyPreset('MODELING_YES')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              modelingFilter === 'Yes'
-                ? 'bg-pink-600 text-white shadow-md shadow-pink-500/20'
-                : 'bg-pink-500/10 border border-pink-500/20 text-pink-300 hover:bg-pink-500/20'
-            }`}
-          >
-            🎭 Modeling "Yes" ({stats?.modelingYesCount ?? 0})
-          </button>
-          <button
-            onClick={() => applyPreset('MODELING_NO')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              modelingFilter === 'No'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
-                : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
-            }`}
-          >
-            Modeling "No" ({stats?.modelingNoCount ?? 0})
-          </button>
-          <button
-            onClick={() => applyPreset('FIRST_YEARS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              yearFilter === '1st Year'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
-                : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
-            }`}
-          >
-            🎓 1st Year (Freshers)
-          </button>
-          <button
+            type="button"
             onClick={() => applyPreset('FAILED_EMAILS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              emailStatusFilter === 'FAILED'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20'
-                : 'bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20'
-            }`}
+            className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/20 transition-all cursor-pointer"
           >
-            ⚠️ Failed Emails ({stats?.emailFailedCount ?? 0})
+            Failed / Pending ({stats?.emailFailedCount || 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset('MODELING_YES')}
+            className="px-3 py-1.5 rounded-xl bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 text-xs font-bold border border-pink-500/20 transition-all cursor-pointer"
+          >
+            Modeling Participants ({stats?.modelingYesCount || 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset('FIRST_YEARS')}
+            className="px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-500/20 transition-all cursor-pointer"
+          >
+            1st Year Freshers
           </button>
         </div>
 
-        {/* Detailed Filters & Search Row */}
-        <div className="glass-card rounded-2xl p-4 border-white/5 bg-white/[0.02] flex flex-col md:flex-row items-center gap-3">
-          <form onSubmit={handleSearchSubmit} className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+        {/* Detailed Filters Bar */}
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              placeholder="Search name, email, reg no..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, registration no, or email..."
-              className="w-full bg-[#0a0520] border border-white/10 focus:border-purple-500 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 outline-none"
+              className="w-full bg-[#0a0520] border border-white/10 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500"
             />
           </form>
 
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            {/* Year Dropdown */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+            {/* Year Filter */}
             <select
               value={yearFilter}
               onChange={(e) => setYearFilter(e.target.value)}
               className="bg-[#0a0520] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none cursor-pointer"
             >
-              <option value="All">All Years</option>
+              <option value="All">Year: All</option>
               <option value="1st Year">1st Year</option>
               <option value="2nd Year">2nd Year</option>
               <option value="3rd Year">3rd Year</option>
               <option value="4th Year">4th Year</option>
             </select>
 
-            {/* Modeling Dropdown */}
+            {/* Modeling Filter */}
             <select
               value={modelingFilter}
               onChange={(e) => setModelingFilter(e.target.value)}
@@ -724,20 +852,20 @@ export default function AdminMailSystemPage() {
         <div>
           {activeTab === 'tickets' ? (
             <button
-              onClick={handleBulkTicketDispatch}
-              disabled={selectedIds.size === 0 || isDispatching}
+              onClick={() => launchDispatchQueue('tickets')}
+              disabled={selectedIds.size === 0}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 font-bold text-xs uppercase tracking-wider text-white shadow-lg shadow-purple-500/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {isDispatching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <Send className="w-4 h-4" />
               Resend Tickets to {selectedIds.size} Student(s)
             </button>
           ) : (
             <button
-              onClick={handleCustomBroadcastDispatch}
-              disabled={selectedIds.size === 0 || isDispatching}
+              onClick={() => launchDispatchQueue('broadcast')}
+              disabled={selectedIds.size === 0}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 font-bold text-xs uppercase tracking-wider text-white shadow-lg shadow-pink-500/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {isDispatching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <Send className="w-4 h-4" />
               Send Broadcast to {selectedIds.size} Student(s)
             </button>
           )}
@@ -758,10 +886,10 @@ export default function AdminMailSystemPage() {
                     className="w-3.5 h-3.5 rounded border-white/20 text-purple-600 bg-[#0a0520] cursor-pointer"
                   />
                 </th>
-                <th className="px-4 py-3.5">Student Name</th>
+                <th className="px-4 py-3.5">Name</th>
                 <th className="px-4 py-3.5">Registration No</th>
                 <th className="px-4 py-3.5">Year</th>
-                <th className="px-4 py-3.5">Email Address</th>
+                <th className="px-4 py-3.5">Email</th>
                 <th className="px-4 py-3.5">Modeling</th>
                 <th className="px-4 py-3.5">Ticket ID</th>
                 <th className="px-4 py-3.5">Email Status</th>
@@ -771,27 +899,27 @@ export default function AdminMailSystemPage() {
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-20 text-center text-slate-500">
                     <Loader2 className="w-6 h-6 text-purple-400 animate-spin mx-auto mb-2" />
-                    <span className="text-xs uppercase tracking-wider font-semibold">Loading Audience Database...</span>
+                    Loading recipients...
                   </td>
                 </tr>
               ) : recipients.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    No students matched the selected filters.
+                  <td colSpan={9} className="py-20 text-center text-slate-500">
+                    No recipients match the selected criteria.
                   </td>
                 </tr>
               ) : (
                 recipients.map((reg) => {
                   const isSelected = selectedIds.has(reg.id);
                   return (
-                    <tr
-                      key={reg.id}
-                      onClick={() => toggleSelect(reg.id)}
-                      className={`hover:bg-white/[0.03] transition-colors cursor-pointer ${
-                        isSelected ? 'bg-purple-600/10' : ''
+                    <tr 
+                      key={reg.id} 
+                      className={`hover:bg-white/[0.02] transition-colors cursor-pointer ${
+                        isSelected ? 'bg-purple-500/5' : ''
                       }`}
+                      onClick={() => toggleSelect(reg.id)}
                     >
                       <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                         <input
@@ -866,6 +994,375 @@ export default function AdminMailSystemPage() {
         </div>
       </div>
 
+      {/* =========================================================
+          LIVE DISPATCH HUB & SAFE QUEUE MODAL (POPOUT WINDOW)
+         ========================================================= */}
+      {isQueueModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={(e) => {
+            // Prevent accidental backdrop dismissal if running
+            if (!isQueueRunning) handleCloseQueueModal();
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            className="w-full max-w-4xl bg-[#09041a] border border-purple-500/30 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] relative"
+          >
+            {/* Modal Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-6 py-4 bg-gradient-to-r from-purple-950/60 via-[#10072b] to-[#09041a] border-b border-white/10 gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold font-outfit text-white text-base">
+                      Live Mail Dispatch Hub
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      {queueMode === 'tickets' ? 'Ticket Delivery' : 'Broadcast Announcement'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Safe 5-second interval pacing active to protect Gmail deliverability.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status / Close Buttons */}
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Gmail Safe Mode (5s delay)
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCloseQueueModal}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-all cursor-pointer"
+                  title="Close Window"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Live Counters Banner */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-6 pb-4 bg-black/30 border-b border-white/5">
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                  Total Queued
+                </span>
+                <span className="text-2xl font-black font-outfit text-white">
+                  {queueStats.total}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-0.5">
+                  Sent Successfully
+                </span>
+                <span className="text-2xl font-black font-outfit text-emerald-300">
+                  {queueStats.sent}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center">
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block mb-0.5">
+                  Remaining in Queue
+                </span>
+                <span className="text-2xl font-black font-outfit text-amber-300">
+                  {queueStats.remaining}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-center">
+                <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider block mb-0.5">
+                  Failed Deliveries
+                </span>
+                <span className="text-2xl font-black font-outfit text-red-300">
+                  {queueStats.failed}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Progress Bar & Countdown Pacing Indicator */}
+            <div className="px-6 py-3 bg-[#0d0724] border-b border-white/5 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2">
+                  {isQueueRunning ? (
+                    <span className="inline-flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                      {countdown > 0 ? (
+                        <span>
+                          Pacing delay: Next email sending in{' '}
+                          <strong className="text-pink-400 font-mono text-xs">{countdown}s</strong>...
+                        </span>
+                      ) : (
+                        <span>Dispatching current email to recipient...</span>
+                      )}
+                    </span>
+                  ) : isQueuePaused ? (
+                    <span className="inline-flex items-center gap-1.5 text-amber-400 font-bold text-[11px]">
+                      <Pause className="w-3.5 h-3.5" />
+                      Queue Paused. Click Resume or Resend Remaining to continue.
+                    </span>
+                  ) : queueStats.remaining === 0 ? (
+                    <span className="inline-flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      All Emails Dispatched Successfully! 🎉
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-slate-400 font-medium text-[11px]">
+                      Queue is ready.
+                    </span>
+                  )}
+                </div>
+
+                <div className="font-mono font-bold text-xs text-purple-300">
+                  {queueStats.percent}% Complete
+                </div>
+              </div>
+
+              {/* Progress track */}
+              <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden relative">
+                <div 
+                  className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 transition-all duration-300 rounded-full"
+                  style={{ width: `${queueStats.percent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Controls Bar & Filters */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-6 py-3 bg-black/40 border-b border-white/5 gap-3">
+              {/* Tab Filters */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setQueueFilterTab('remaining')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    queueFilterTab === 'remaining'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  Remaining Unsent ({queueStats.remaining})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQueueFilterTab('sent')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    queueFilterTab === 'sent'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  Sent ({queueStats.sent})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQueueFilterTab('failed')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    queueFilterTab === 'failed'
+                      ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                      : 'text-slate-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  Failed ({queueStats.failed})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQueueFilterTab('all')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    queueFilterTab === 'all'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : 'text-slate-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  All Selected ({queueStats.total})
+                </button>
+              </div>
+
+              {/* Action Buttons: Pause, Resume, Resend Remaining */}
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                {isQueueRunning ? (
+                  <button
+                    type="button"
+                    onClick={handlePauseQueue}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                    Pause Dispatch
+                  </button>
+                ) : isQueuePaused && queueStats.pending > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleResumeQueue}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    Resume Dispatch
+                  </button>
+                ) : null}
+
+                {/* Resend to Remaining Button (Visible whenever items are failed/pending and queue is not currently actively running) */}
+                {queueStats.remaining > 0 && !isQueueRunning && (
+                  <button
+                    type="button"
+                    onClick={handleResendRemaining}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-xs shadow-lg shadow-purple-500/20 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Resend to Remaining ({queueStats.remaining})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Recipient Queue List */}
+            <div className="p-6 overflow-y-auto max-h-[50vh] space-y-2">
+              {displayedQueueItems.length === 0 ? (
+                <div className="py-16 text-center text-slate-500 border border-dashed border-white/10 rounded-2xl">
+                  {queueFilterTab === 'remaining' ? (
+                    <div>
+                      <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-80" />
+                      <p className="text-sm font-bold text-white">No Remaining Unsent Recipients</p>
+                      <p className="text-xs text-slate-400 mt-1">All selected emails in this batch have been delivered successfully.</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-medium">No recipients under this tab.</p>
+                  )}
+                </div>
+              ) : (
+                displayedQueueItems.map((item) => {
+                  const isCurrentActive = activeItemId === item.id;
+                  return (
+                    <div 
+                      key={item.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row justify-between sm:items-center gap-3 ${
+                        isCurrentActive
+                          ? 'bg-purple-950/40 border-purple-500 shadow-lg shadow-purple-500/10'
+                          : item.status === 'SENT'
+                          ? 'bg-emerald-950/10 border-emerald-500/20'
+                          : item.status === 'FAILED'
+                          ? 'bg-red-950/20 border-red-500/30'
+                          : 'bg-white/[0.02] border-white/5 hover:border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Status Icon */}
+                        <div className="mt-0.5">
+                          {item.status === 'SENT' ? (
+                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          ) : item.status === 'SENDING' || isCurrentActive ? (
+                            <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                          ) : item.status === 'FAILED' ? (
+                            <XCircle className="w-4 h-4 text-red-400" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-slate-500" />
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-xs">{item.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded">
+                              {item.regNo}
+                            </span>
+                            {item.year && (
+                              <span className="text-[10px] text-slate-400">{item.year}</span>
+                            )}
+                          </div>
+                          
+                          <div className="text-[11px] text-slate-300 font-mono mt-0.5">
+                            {item.email}
+                          </div>
+
+                          {/* Failure Error Message */}
+                          {item.status === 'FAILED' && item.error && (
+                            <div className="mt-1 text-[10px] text-red-300 font-semibold bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 inline-block">
+                              Error: {item.error}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status & Actions */}
+                      <div className="flex items-center gap-2 justify-end">
+                        {item.status === 'SENT' && (
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                            SENT {item.sentAt ? `at ${item.sentAt}` : ''}
+                          </span>
+                        )}
+
+                        {item.status === 'SENDING' && (
+                          <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold animate-pulse">
+                            Sending...
+                          </span>
+                        )}
+
+                        {item.status === 'FAILED' && (
+                          <span className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold">
+                            FAILED
+                          </span>
+                        )}
+
+                        {item.status === 'PENDING' && (
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 text-[10px] font-bold">
+                            WAITING
+                          </span>
+                        )}
+
+                        {/* Remove / Skip button for unsent / failed items */}
+                        {item.status !== 'SENT' && item.status !== 'SENDING' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="p-1 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-300 text-slate-500 transition-all cursor-pointer"
+                            title="Remove from queue"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Bottom Footer */}
+            <div className="px-6 py-4 bg-[#0a0520] border-t border-white/10 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <span className="text-[11px] text-slate-400 text-center sm:text-left">
+                {queueStats.remaining > 0 ? (
+                  <span>
+                    <strong>{queueStats.remaining}</strong> recipient(s) remaining in dispatch queue.
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold">
+                    ✓ All emails in this batch have completed delivery.
+                  </span>
+                )}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseQueueModal}
+                  className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  {queueStats.remaining === 0 ? 'Done & Close' : 'Close Queue'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Live Email Preview Modal */}
       {showPreviewModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowPreviewModal(false)}>
@@ -877,7 +1374,7 @@ export default function AdminMailSystemPage() {
               <h3 className="font-bold font-outfit text-white text-sm">Live Broadcast Email Preview</h3>
               <button 
                 onClick={() => setShowPreviewModal(false)}
-                className="p-1 rounded-lg bg-white/5 text-slate-400 hover:text-white"
+                className="p-1 rounded-lg bg-white/5 text-slate-400 hover:text-white cursor-pointer"
               >
                 &times;
               </button>
@@ -924,79 +1421,6 @@ export default function AdminMailSystemPage() {
                   &copy; 2026 School of Computing and Artificial Intelligence. All rights reserved.
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dispatch Results & Progress Modal */}
-      {showResultsModal && dispatchProgress && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowResultsModal(false)}>
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            className="w-full max-w-xl bg-[#0a0520] border border-white/10 rounded-2xl overflow-hidden shadow-2xl p-6 space-y-5"
-          >
-            <div className="flex justify-between items-center border-b border-white/5 pb-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold font-outfit text-white text-base">Dispatch Execution Complete</h3>
-              </div>
-              <button 
-                onClick={() => setShowResultsModal(false)}
-                className="p-1 rounded-lg bg-white/5 text-slate-400 hover:text-white"
-              >
-                &times;
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block">Total Processed</span>
-                <span className="text-xl font-bold text-white font-outfit">{dispatchProgress.total}</span>
-              </div>
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-[10px] font-bold text-emerald-400 uppercase block">Sent Successfully</span>
-                <span className="text-xl font-bold text-emerald-300 font-outfit">{dispatchProgress.sent}</span>
-              </div>
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-                <span className="text-[10px] font-bold text-red-400 uppercase block">Failed Deliveries</span>
-                <span className="text-xl font-bold text-red-300 font-outfit">{dispatchProgress.failed}</span>
-              </div>
-            </div>
-
-            {/* Delivery Logs List */}
-            <div className="space-y-2">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Delivery Breakdown</h4>
-              <div className="max-h-60 overflow-y-auto space-y-1.5 bg-black/40 p-3 rounded-xl border border-white/5 text-xs">
-                {dispatchResults.map((r, idx) => (
-                  <div key={idx} className="flex justify-between items-center py-1 border-b border-white/5 last:border-none">
-                    <div className="truncate max-w-[280px]">
-                      <span className="font-bold text-white">{r.name}</span>{' '}
-                      <span className="text-slate-400 font-mono text-[10px]">({r.email})</span>
-                    </div>
-                    <div>
-                      {r.success ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                          SENT
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded" title={r.error}>
-                          FAILED: {r.error}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setShowResultsModal(false)}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-xs uppercase tracking-wider cursor-pointer"
-              >
-                Done
-              </button>
             </div>
           </div>
         </div>
