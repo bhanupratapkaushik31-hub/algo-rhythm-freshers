@@ -114,4 +114,42 @@ export const EntryService = {
       return { total_scans: 0, recent_scans: [] };
     }
   },
+
+  /**
+   * On-Spot Attendee Registration and Payment Entry
+   */
+  async onSpotEntry(payload: {
+    registration_number: string;
+    full_name: string;
+    email: string;
+    phone: string;
+    year?: string;
+    photo_base64?: string;
+  }): Promise<{ success: boolean; message?: string; data?: any; error?: any }> {
+    try {
+      const token = await AuthService.getAccessToken();
+
+      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/api/entry/on-spot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          ...payload,
+          scanner_device: 'Android Coordinator App (On-Spot)',
+        }),
+      });
+
+      const res = await response.json();
+      return res;
+    } catch (err: any) {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: err?.message || 'Network connection failed.' },
+      };
+    }
+  },
 };
+
+

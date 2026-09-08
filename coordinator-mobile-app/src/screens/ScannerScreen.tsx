@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,16 @@ import {
   Alert,
   StatusBar,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { EntryService, VerifyResult } from '../services/api';
 import { AuthService, CoordinatorProfile } from '../services/auth';
 import { APP_CONFIG } from '../config/env';
+
+const qr100Img = require('../../assets/qr_100.jpg');
+const qr200Img = require('../../assets/qr_200.jpg');
 
 interface ScannerScreenProps {
   coordinator: CoordinatorProfile;
@@ -37,6 +41,21 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
 
   // Stats
   const [totalScanned, setTotalScanned] = useState(0);
+
+  // On-Spot Entry States
+  const [onSpotModalVisible, setOnSpotModalVisible] = useState(false);
+  const [onSpotStep, setOnSpotStep] = useState<'FORM' | 'CAMERA' | 'QR' | 'SUCCESS'>('FORM');
+  const [onSpotRegNo, setOnSpotRegNo] = useState('');
+  const [onSpotName, setOnSpotName] = useState('');
+  const [onSpotEmail, setOnSpotEmail] = useState('');
+  const [onSpotPhone, setOnSpotPhone] = useState('');
+  const [onSpotPhotoUri, setOnSpotPhotoUri] = useState<string | null>(null);
+  const [onSpotPhotoBase64, setOnSpotPhotoBase64] = useState<string | null>(null);
+  const [onSpotFacing, setOnSpotFacing] = useState<'back' | 'front'>('back');
+  const [onSpotSubmitting, setOnSpotSubmitting] = useState(false);
+  const [onSpotError, setOnSpotError] = useState<string | null>(null);
+  const [onSpotSuccessData, setOnSpotSuccessData] = useState<any | null>(null);
+  const onSpotCameraRef = useRef<any>(null);
 
   useEffect(() => {
     fetchStats();
@@ -92,6 +111,94 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     setResult(null);
     setScanned(false);
     setVerifying(false);
+  };
+
+  // On-Spot Calculations & Handlers
+  const is1stYearOnSpot = onSpotRegNo.trim().startsWith('126');
+  const onSpotYear = is1stYearOnSpot ? '1st Year' : '2nd Year';
+  const onSpotFee = is1stYearOnSpot ? 100 : 200;
+
+  const resetOnSpotForm = () => {
+    setOnSpotRegNo('');
+    setOnSpotName('');
+    setOnSpotEmail('');
+    setOnSpotPhone('');
+    setOnSpotPhotoUri(null);
+    setOnSpotPhotoBase64(null);
+    setOnSpotError(null);
+    setOnSpotSuccessData(null);
+    setOnSpotStep('FORM');
+  };
+
+  const handleSnapAttendeePhoto = async () => {
+    try {
+      if (!onSpotCameraRef.current) return;
+      const photo = await onSpotCameraRef.current.takePictureAsync({
+        quality: 0.6,
+        base64: true,
+      });
+      if (photo) {
+        setOnSpotPhotoUri(photo.uri);
+        setOnSpotPhotoBase64(photo.base64 || null);
+        setOnSpotStep('FORM');
+      }
+    } catch (err: any) {
+      console.warn('Take photo error:', err);
+      Alert.alert('Camera Error', 'Could not capture attendee photo.');
+    }
+  };
+
+  const handleProceedToQR = () => {
+    const reg = onSpotRegNo.trim();
+    const name = onSpotName.trim();
+    const em = onSpotEmail.trim();
+    const ph = onSpotPhone.trim();
+
+    if (!reg || !name || !em || !ph) {
+      setOnSpotError('Please fill in Registration Number, Full Name, Email, and Phone.');
+      return;
+    }
+    if (!em.includes('@')) {
+      setOnSpotError('Please enter a valid email address.');
+      return;
+    }
+    if (ph.length < 10) {
+      setOnSpotError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    setOnSpotError(null);
+    setOnSpotStep('QR');
+  };
+
+  const handleConfirmOnSpotPayment = async () => {
+    setOnSpotSubmitting(true);
+    setOnSpotError(null);
+
+    const res = await EntryService.onSpotEntry({
+      registration_number: onSpotRegNo.trim(),
+      full_name: onSpotName.trim(),
+      email: onSpotEmail.trim(),
+      phone: onSpotPhone.trim(),
+      year: onSpotYear,
+      photo_base64: onSpotPhotoBase64 || undefined,
+    });
+
+    setOnSpotSubmitting(false);
+
+    if (res.success) {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
+      setTotalScanned(prev => prev + 1);
+      setOnSpotSuccessData(res.data);
+      setOnSpotStep('SUCCESS');
+    } else {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      setOnSpotError(res.error?.message || 'Failed to confirm on-spot entry.');
+    }
   };
 
   const handleLogoutConfirm = () => {
@@ -215,7 +322,17 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
           style={styles.controlBtn}
           onPress={() => setManualModalVisible(true)}
         >
-          <Text style={styles.controlBtnText}>⌨️ Enter Code</Text>
+          <Text style={styles.controlBtnText}>⌨️ Code</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.controlBtn, styles.onSpotControlBtn]}
+          onPress={() => {
+            resetOnSpotForm();
+            setOnSpotModalVisible(true);
+          }}
+        >
+          <Text style={styles.onSpotControlBtnText}>⚡ On-Spot</Text>
         </TouchableOpacity>
       </View>
 
@@ -345,6 +462,296 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* On-Spot Gate Entry Modal */}
+      <Modal visible={onSpotModalVisible} animationType="slide" transparent={onSpotStep !== 'CAMERA'}>
+        {onSpotStep === 'CAMERA' ? (
+          <View style={styles.onSpotCameraContainer}>
+            <CameraView
+              ref={onSpotCameraRef}
+              style={StyleSheet.absoluteFillObject}
+              facing={onSpotFacing}
+            />
+            <View style={styles.onSpotCameraOverlay}>
+              <View style={styles.onSpotCameraHeader}>
+                <TouchableOpacity
+                  style={styles.onSpotCameraCloseBtn}
+                  onPress={() => setOnSpotStep('FORM')}
+                >
+                  <Text style={styles.onSpotCameraCloseText}>✕ Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.onSpotCameraFlipBtn}
+                  onPress={() => setOnSpotFacing(onSpotFacing === 'back' ? 'front' : 'back')}
+                >
+                  <Text style={styles.onSpotCameraCloseText}>🔄 Flip Camera</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.onSpotFaceGuide}>
+                <View style={styles.faceOvalGuide} />
+                <Text style={styles.faceGuideText}>Position attendee face inside frame</Text>
+              </View>
+
+              <View style={styles.onSpotShutterRow}>
+                <TouchableOpacity
+                  style={styles.onSpotShutterBtn}
+                  onPress={handleSnapAttendeePhoto}
+                >
+                  <View style={styles.onSpotShutterInner} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.modalBackdrop}>
+            <View style={styles.onSpotCard}>
+              {onSpotStep === 'FORM' && (
+                <ScrollView contentContainerStyle={styles.onSpotScroll} keyboardShouldPersistTaps="handled">
+                  <View style={styles.onSpotHeaderRow}>
+                    <View>
+                      <Text style={styles.onSpotMainTitle}>⚡ On-Spot Gate Entry</Text>
+                      <Text style={styles.onSpotMainSubtitle}>Quick Registration & Spot Check-in</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setOnSpotModalVisible(false)}
+                      style={styles.onSpotCloseIconBtn}
+                    >
+                      <Text style={styles.onSpotCloseIconText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Year & Pricing Badge */}
+                  <View style={styles.onSpotFeeBanner}>
+                    <Text style={styles.onSpotFeeBannerTitle}>
+                      {onSpotRegNo.trim() ? `Detected: ${onSpotYear}` : 'Batch Auto-Detection'}
+                    </Text>
+                    <Text style={styles.onSpotFeeBannerAmount}>
+                      Ticket Fee: ₹{onSpotFee}
+                    </Text>
+                  </View>
+
+                  {onSpotError && (
+                    <View style={styles.onSpotErrorBox}>
+                      <Text style={styles.onSpotErrorText}>⚠️ {onSpotError}</Text>
+                    </View>
+                  )}
+
+                  {/* Form Inputs */}
+                  <View style={styles.onSpotInputGroup}>
+                    <Text style={styles.onSpotInputLabel}>REGISTRATION NUMBER</Text>
+                    <TextInput
+                      style={styles.onSpotInput}
+                      placeholder="e.g. 12601234 (1st Yr) or 12501234 (2nd Yr)"
+                      placeholderTextColor="#64748b"
+                      value={onSpotRegNo}
+                      onChangeText={setOnSpotRegNo}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+
+                  <View style={styles.onSpotInputGroup}>
+                    <Text style={styles.onSpotInputLabel}>FULL NAME</Text>
+                    <TextInput
+                      style={styles.onSpotInput}
+                      placeholder="e.g. Rahul Sharma"
+                      placeholderTextColor="#64748b"
+                      value={onSpotName}
+                      onChangeText={setOnSpotName}
+                    />
+                  </View>
+
+                  <View style={styles.onSpotInputGroup}>
+                    <Text style={styles.onSpotInputLabel}>EMAIL ADDRESS</Text>
+                    <TextInput
+                      style={styles.onSpotInput}
+                      placeholder="attendee@gmail.com"
+                      placeholderTextColor="#64748b"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={onSpotEmail}
+                      onChangeText={setOnSpotEmail}
+                    />
+                  </View>
+
+                  <View style={styles.onSpotInputGroup}>
+                    <Text style={styles.onSpotInputLabel}>PHONE NUMBER</Text>
+                    <TextInput
+                      style={styles.onSpotInput}
+                      placeholder="10-digit mobile number"
+                      placeholderTextColor="#64748b"
+                      keyboardType="phone-pad"
+                      value={onSpotPhone}
+                      onChangeText={setOnSpotPhone}
+                      maxLength={10}
+                    />
+                  </View>
+
+                  {/* Live Photo Section */}
+                  <View style={styles.onSpotPhotoSection}>
+                    <Text style={styles.onSpotInputLabel}>ATTENDEE PHOTO</Text>
+                    {onSpotPhotoUri ? (
+                      <View style={styles.onSpotPhotoPreviewRow}>
+                        <Image source={{ uri: onSpotPhotoUri }} style={styles.onSpotPhotoThumb} />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.onSpotPhotoSuccessText}>✓ Live photo captured</Text>
+                          <TouchableOpacity
+                            style={styles.onSpotRetakeBtn}
+                            onPress={() => setOnSpotStep('CAMERA')}
+                          >
+                            <Text style={styles.onSpotRetakeText}>📸 Retake Photo</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.onSpotTakePhotoBtn}
+                        onPress={() => setOnSpotStep('CAMERA')}
+                      >
+                        <Text style={styles.onSpotTakePhotoBtnText}>📸 Tap to Open Camera & Take Photo</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Proceed to QR Button */}
+                  <TouchableOpacity
+                    style={styles.onSpotProceedBtn}
+                    onPress={handleProceedToQR}
+                  >
+                    <Text style={styles.onSpotProceedBtnText}>
+                      PROCEED TO PAYMENT (₹{onSpotFee}) →
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              )}
+
+              {onSpotStep === 'QR' && (
+                <ScrollView contentContainerStyle={styles.onSpotScroll}>
+                  <View style={styles.onSpotHeaderRow}>
+                    <View>
+                      <Text style={styles.onSpotMainTitle}>💳 Collect Payment</Text>
+                      <Text style={styles.onSpotMainSubtitle}>Attendee: {onSpotName} ({onSpotYear})</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setOnSpotStep('FORM')}
+                      style={styles.onSpotCloseIconBtn}
+                    >
+                      <Text style={styles.onSpotCloseIconText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Amount Banner */}
+                  <View style={styles.qrAmountHeader}>
+                    <Text style={styles.qrAmountLabel}>AMOUNT TO PAY</Text>
+                    <Text style={styles.qrAmountValue}>₹{onSpotFee}</Text>
+                    <Text style={styles.qrAmountSubtitle}>
+                      {is1stYearOnSpot ? '1st Year Freshers Rate' : '2nd Year / Senior Rate'}
+                    </Text>
+                  </View>
+
+                  {/* Razorpay QR Code Display Card */}
+                  <View style={styles.razorpayQrWrapper}>
+                    <Image
+                      source={is1stYearOnSpot ? qr100Img : qr200Img}
+                      style={styles.razorpayQrImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <Text style={styles.qrInstructions}>
+                    Ask <Text style={{ fontWeight: '800', color: '#ffffff' }}>{onSpotName}</Text> to scan this QR code with any UPI App (GPay, PhonePe, Paytm) to pay ₹{onSpotFee}.
+                  </Text>
+
+                  {onSpotError && (
+                    <View style={styles.onSpotErrorBox}>
+                      <Text style={styles.onSpotErrorText}>⚠️ {onSpotError}</Text>
+                    </View>
+                  )}
+
+                  {/* Confirmation Button */}
+                  <TouchableOpacity
+                    style={[styles.onSpotConfirmBtn, onSpotSubmitting && { opacity: 0.6 }]}
+                    onPress={handleConfirmOnSpotPayment}
+                    disabled={onSpotSubmitting}
+                  >
+                    {onSpotSubmitting ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <ActivityIndicator color="#ffffff" />
+                        <Text style={styles.onSpotConfirmBtnText}>RECORDING ENTRY...</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.onSpotConfirmBtnText}>
+                        ✅ PAYMENT RECEIVED — CONFIRM ENTRY
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.onSpotBackBtn}
+                    onPress={() => setOnSpotStep('FORM')}
+                    disabled={onSpotSubmitting}
+                  >
+                    <Text style={styles.onSpotBackBtnText}>← Edit Student Details</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              )}
+
+              {onSpotStep === 'SUCCESS' && (
+                <View style={styles.onSpotSuccessContainer}>
+                  <View style={styles.successIconCircle}>
+                    <Text style={{ fontSize: 36 }}>✅</Text>
+                  </View>
+
+                  <Text style={styles.successHeading}>ENTRY AUTHORIZED</Text>
+                  <Text style={styles.successSubheading}>Ticket Created & Payment Verified</Text>
+
+                  <View style={styles.successCardBox}>
+                    <View style={styles.successDetailRow}>
+                      <Text style={styles.successDetailLabel}>STUDENT NAME</Text>
+                      <Text style={styles.successDetailValue}>{onSpotName}</Text>
+                    </View>
+                    <View style={styles.successDetailRow}>
+                      <Text style={styles.successDetailLabel}>REGISTRATION NO</Text>
+                      <Text style={styles.successDetailValue}>{onSpotRegNo}</Text>
+                    </View>
+                    <View style={styles.successDetailRow}>
+                      <Text style={styles.successDetailLabel}>BATCH & YEAR</Text>
+                      <Text style={styles.successDetailValue}>{onSpotYear}</Text>
+                    </View>
+                    <View style={styles.successDetailRow}>
+                      <Text style={styles.successDetailLabel}>AMOUNT COLLECTED</Text>
+                      <Text style={[styles.successDetailValue, { color: '#34d399', fontWeight: '900' }]}>
+                        ₹{onSpotFee} (On-Spot UPI)
+                      </Text>
+                    </View>
+                    <View style={styles.successDetailRow}>
+                      <Text style={styles.successDetailLabel}>TICKET ID</Text>
+                      <Text style={[styles.successDetailValue, { color: '#a855f7', fontWeight: '800' }]}>
+                        #{onSpotSuccessData?.student?.ticket_id || 'CONFIRMED'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.successFooterNotice}>
+                    ✓ Check-in recorded under coordinator {coordinator.name || coordinator.email}.{'\n'}
+                    ✓ Official ticket confirmation sent to {onSpotEmail}.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.onSpotNextBtn}
+                    onPress={() => {
+                      resetOnSpotForm();
+                      setOnSpotModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.onSpotNextBtnText}>CHECK IN NEXT ATTENDEE</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
       </Modal>
     </View>
   );
@@ -533,6 +940,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  onSpotControlBtn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.5)',
+  },
+  onSpotControlBtnText: {
+    color: '#34d399',
+    fontSize: 12,
+    fontWeight: '900',
   },
   modalBackdrop: {
     flex: 1,
@@ -757,5 +1174,408 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '800',
+  },
+
+  // On-Spot Styles
+  onSpotCard: {
+    backgroundColor: '#0f082e',
+    borderRadius: 24,
+    padding: 20,
+    width: '100%',
+    maxWidth: 390,
+    maxHeight: '92%',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  onSpotScroll: {
+    paddingBottom: 8,
+  },
+  onSpotHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  onSpotMainTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  onSpotMainSubtitle: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  onSpotCloseIconBtn: {
+    padding: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  onSpotCloseIconText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  onSpotFeeBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  onSpotFeeBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6ee7b7',
+  },
+  onSpotFeeBannerAmount: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#34d399',
+  },
+  onSpotErrorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  onSpotErrorText: {
+    color: '#fca5a5',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  onSpotInputGroup: {
+    marginBottom: 12,
+  },
+  onSpotInputLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 5,
+  },
+  onSpotInput: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#ffffff',
+  },
+  onSpotPhotoSection: {
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  onSpotTakePhotoBtn: {
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  onSpotTakePhotoBtnText: {
+    color: '#d8b4fe',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  onSpotPhotoPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  onSpotPhotoThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#1e1b4b',
+  },
+  onSpotPhotoSuccessText: {
+    color: '#6ee7b7',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  onSpotRetakeBtn: {
+    marginTop: 4,
+  },
+  onSpotRetakeText: {
+    color: '#c084fc',
+    fontSize: 11,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  onSpotProceedBtn: {
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 4,
+    marginTop: 4,
+  },
+  onSpotProceedBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  qrAmountHeader: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  qrAmountLabel: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  qrAmountValue: {
+    color: '#34d399',
+    fontSize: 28,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  qrAmountSubtitle: {
+    color: '#6ee7b7',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  razorpayQrWrapper: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    marginBottom: 12,
+  },
+  razorpayQrImage: {
+    width: 220,
+    height: 290,
+  },
+  qrInstructions: {
+    color: '#94a3b8',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+    paddingHorizontal: 8,
+  },
+  onSpotConfirmBtn: {
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 4,
+    marginBottom: 8,
+  },
+  onSpotConfirmBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  onSpotBackBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  onSpotBackBtnText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  onSpotSuccessContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  successIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 2,
+    borderColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  successHeading: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  successSubheading: {
+    fontSize: 12,
+    color: '#34d399',
+    fontWeight: '700',
+    marginTop: 2,
+    marginBottom: 16,
+  },
+  successCardBox: {
+    width: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 14,
+  },
+  successDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  successDetailLabel: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '800',
+  },
+  successDetailValue: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  successFooterNotice: {
+    color: '#94a3b8',
+    fontSize: 11,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  onSpotNextBtn: {
+    width: '100%',
+    backgroundColor: '#9333ea',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#9333ea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  onSpotNextBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  onSpotCameraContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  onSpotCameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+  },
+  onSpotCameraHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  onSpotCameraCloseBtn: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  onSpotCameraFlipBtn: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  onSpotCameraCloseText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  onSpotFaceGuide: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceOvalGuide: {
+    width: 220,
+    height: 280,
+    borderRadius: 110,
+    borderWidth: 3,
+    borderColor: '#10b981',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  faceGuideText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  onSpotShutterRow: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  onSpotShutterBtn: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 4,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onSpotShutterInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#ffffff',
   },
 });
