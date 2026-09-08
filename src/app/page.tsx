@@ -34,7 +34,7 @@ export default function Home() {
   // 1. Live Countdown Timer Logic for Event and Registration Deadline
   useEffect(() => {
     const targetDate = new Date(EVENT_CONFIG.date).getTime();
-    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T12:00:00+05:30").getTime();
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T17:00:00+05:30").getTime();
 
     const updateTimer = () => {
       const now = new Date().getTime();

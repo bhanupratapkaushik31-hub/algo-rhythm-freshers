@@ -40,7 +40,7 @@ export default function Register() {
 
   // 1. Check registration portal status and countdown
   useEffect(() => {
-    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T12:00:00+05:30").getTime();
+    const regTargetDate = new Date(EVENT_CONFIG.registrationDeadline || "2026-09-08T17:00:00+05:30").getTime();
 
     const updateRegTimer = () => {
       const now = new Date().getTime();
