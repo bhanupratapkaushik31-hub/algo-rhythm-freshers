@@ -79,6 +79,7 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
   const [onSpotModalVisible, setOnSpotModalVisible] = useState(false);
   const [onSpotStep, setOnSpotStep] = useState<'FORM' | 'CAMERA' | 'QR' | 'SUCCESS'>('FORM');
   const [onSpotRegNo, setOnSpotRegNo] = useState('');
+  const [onSpotSelectedYear, setOnSpotSelectedYear] = useState<'1st Year' | '2nd Year' | null>(null);
   const [onSpotName, setOnSpotName] = useState('');
   const [onSpotEmail, setOnSpotEmail] = useState('');
   const [onSpotPhone, setOnSpotPhone] = useState('');
@@ -240,12 +241,15 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
   };
 
   // On-Spot Calculations & Handlers
-  const is1stYearOnSpot = onSpotRegNo.trim().startsWith('126');
-  const onSpotYear = is1stYearOnSpot ? '1st Year' : '2nd Year';
+  const detected1stYear = onSpotRegNo.trim().startsWith('126');
+  const effectiveYear = onSpotSelectedYear || (detected1stYear ? '1st Year' : '2nd Year');
+  const is1stYearOnSpot = effectiveYear === '1st Year';
+  const onSpotYear = effectiveYear;
   const onSpotFee = is1stYearOnSpot ? 100 : 200;
 
   const resetOnSpotForm = () => {
     setOnSpotRegNo('');
+    setOnSpotSelectedYear(null);
     setOnSpotName('');
     setOnSpotEmail('');
     setOnSpotPhone('');
@@ -854,9 +858,46 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                   {/* Year & Pricing Banner */}
                   <View style={styles.onSpotFeeBanner}>
                     <Text style={styles.onSpotFeeBannerTitle}>
-                      {onSpotRegNo.trim() ? `Detected: ${onSpotYear}` : 'Batch Auto-Detection'}
+                      {`Selected: ${onSpotYear}`}
                     </Text>
                     <Text style={styles.onSpotFeeBannerAmount}>Ticket Fee: ₹{onSpotFee}</Text>
+                  </View>
+
+                  {/* Batch / Year Toggle Buttons */}
+                  <View style={styles.onSpotYearSelectorRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.onSpotYearPill,
+                        is1stYearOnSpot && styles.onSpotYearPillActive100,
+                      ]}
+                      onPress={() => setOnSpotSelectedYear('1st Year')}
+                    >
+                      <Text
+                        style={[
+                          styles.onSpotYearPillText,
+                          is1stYearOnSpot && styles.onSpotYearPillTextActive,
+                        ]}
+                      >
+                        🎓 1st Year (₹100)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.onSpotYearPill,
+                        !is1stYearOnSpot && styles.onSpotYearPillActive200,
+                      ]}
+                      onPress={() => setOnSpotSelectedYear('2nd Year')}
+                    >
+                      <Text
+                        style={[
+                          styles.onSpotYearPillText,
+                          !is1stYearOnSpot && styles.onSpotYearPillTextActive,
+                        ]}
+                      >
+                        🏆 2nd Year (₹200)
+                      </Text>
+                    </TouchableOpacity>
                   </View>
 
                   {onSpotError && (
@@ -873,7 +914,19 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                       placeholder="e.g. 12601234 (1st Yr) or 12501234 (2nd Yr)"
                       placeholderTextColor="#64748b"
                       value={onSpotRegNo}
-                      onChangeText={setOnSpotRegNo}
+                      onChangeText={(val) => {
+                        setOnSpotRegNo(val);
+                        const clean = val.trim();
+                        if (clean.startsWith('126')) {
+                          setOnSpotSelectedYear('1st Year');
+                        } else if (
+                          clean.startsWith('125') ||
+                          clean.startsWith('124') ||
+                          clean.startsWith('123')
+                        ) {
+                          setOnSpotSelectedYear('2nd Year');
+                        }
+                      }}
                       autoCapitalize="characters"
                     />
                   </View>
@@ -1876,7 +1929,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   onSpotFeeBannerTitle: {
     fontSize: 12,
@@ -1887,6 +1940,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     color: '#34d399',
+  },
+  onSpotYearSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  onSpotYearPill: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onSpotYearPillActive100: {
+    backgroundColor: 'rgba(168, 85, 247, 0.25)',
+    borderColor: '#a855f7',
+  },
+  onSpotYearPillActive200: {
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    borderColor: '#f59e0b',
+  },
+  onSpotYearPillText: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  onSpotYearPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '900',
   },
   onSpotErrorBox: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
