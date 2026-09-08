@@ -105,7 +105,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Your ALGO-RHYTHM 2K26 Ticket 🎉</title>
+        <title>Your CONFIRMED ALGO-RHYTHM 2K26 Ticket 🎉</title>
         <style>
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -304,7 +304,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
         const resendRes = await resend.emails.send({
           from: fromEmail,
           to: reg.email,
-          subject: `Your ALGO-RHYTHM 2K26 Ticket 🎉`,
+          subject: `Your CONFIRMED ALGO-RHYTHM 2K26 Ticket 🎉`,
           html: htmlContent,
         });
 
@@ -408,7 +408,7 @@ export async function sendTicketEmail(registrationId: string, force = false): Pr
     const mailOptions = {
       from: `ALGO-RHYTHM <${gmailUser}>`,
       to: reg.email,
-      subject: `Your ALGO-RHYTHM 2K26 Ticket 🎉`,
+      subject: `Your CONFIRMED ALGO-RHYTHM 2K26 Ticket 🎉`,
       html: htmlContent,
     };
 

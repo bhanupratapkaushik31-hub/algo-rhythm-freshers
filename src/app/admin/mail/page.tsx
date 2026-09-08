@@ -197,7 +197,7 @@ export default function AdminMailSystemPage() {
   // Template Presets for Custom Broadcast
   const applyTemplate = (templateName: 'CORRECTED_TICKET' | 'MODELING_CALL' | 'EVENT_GUIDELINES') => {
     if (templateName === 'CORRECTED_TICKET') {
-      setBroadcastSubject('Corrected Access Link: Your ALGO-RHYTHM 2K26 Entry Ticket 🎉');
+      setBroadcastSubject('Your CONFIRMED ALGO-RHYTHM 2K26 Ticket 🎉');
       setBroadcastSenderTitle('Official Ticket Delivery');
       setBroadcastMessage(
         `Hello {{name}},\n\nPlease use the updated button below to securely view, print, or download your official digital entry ticket for ALGO-RHYTHM – CSE Fresher Party 2026.\n\nYour Registration Details:\n• Registration No: {{reg_no}}\n• Year: {{year}}\n• Modeling Choice: {{modeling}}\n\nShow your entry ticket QR code at the entrance gates for direct check-in!`
