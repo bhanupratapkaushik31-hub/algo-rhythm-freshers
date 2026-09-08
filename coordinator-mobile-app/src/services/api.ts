@@ -64,9 +64,13 @@ export const EntryService = {
   },
 
   /**
-   * Mark Entry for an attendee
+   * Mark Entry or Re-Entry for an attendee
    */
-  async markEntry(registrationId: string): Promise<{ success: boolean; message?: string; error?: any }> {
+  async markEntry(
+    registrationId: string,
+    actionType: 'ENTRY' | 'RE_ENTRY' = 'ENTRY',
+    isTest: boolean = false
+  ): Promise<{ success: boolean; data?: any; message?: string; error?: any }> {
     try {
       const token = await AuthService.getAccessToken();
 
@@ -78,6 +82,8 @@ export const EntryService = {
         },
         body: JSON.stringify({
           registration_id: registrationId,
+          action: actionType,
+          is_test: isTest,
           scanner_device: 'Android Coordinator App',
         }),
       });

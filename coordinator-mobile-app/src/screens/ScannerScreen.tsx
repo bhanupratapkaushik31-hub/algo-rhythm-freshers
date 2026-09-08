@@ -11,16 +11,38 @@ import {
   Alert,
   StatusBar,
   ScrollView,
-  Dimensions,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { EntryService, VerifyResult } from '../services/api';
+import { EntryService } from '../services/api';
 import { AuthService, CoordinatorProfile } from '../services/auth';
 import { APP_CONFIG } from '../config/env';
 
 const qr100Img = require('../../assets/qr_100.jpg');
 const qr200Img = require('../../assets/qr_200.jpg');
+
+type ScanResultState =
+  | 'SCANNING'
+  | 'VERIFYING'
+  | 'PENDING_CONFIRMATION'
+  | 'MARKED'
+  | 'ALREADY_ENTERED'
+  | 'UNPAID'
+  | 'INVALID';
+
+interface ScannedStudent {
+  id: string;
+  ticket_id: string;
+  full_name: string;
+  registration_number: string;
+  year: string;
+  school_name: string;
+  modeling: string;
+  photo_url?: string;
+  registration_status?: string;
+  entry_status?: string;
+}
 
 interface ScannerScreenProps {
   coordinator: CoordinatorProfile;
@@ -31,9 +53,20 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [torch, setTorch] = useState(false);
-  const [scanned, setScanned] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [result, setResult] = useState<VerifyResult | null>(null);
+
+  // Scan lifecycle states
+  const [scanState, setScanState] = useState<ScanResultState>('SCANNING');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [student, setStudent] = useState<ScannedStudent | null>(null);
+  const [entryDetails, setEntryDetails] = useState<any>(null);
+  const [markingEntry, setMarkingEntry] = useState(false);
+  const [isTestModeScanned, setIsTestModeScanned] = useState(false);
+
+  // Debounce & atomic locks
+  const isProcessingRef = useRef(false);
+  const lastScannedTokenRef = useRef<string | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
+  const autoResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Manual entry modal
   const [manualModalVisible, setManualModalVisible] = useState(false);
@@ -59,6 +92,11 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
 
   useEffect(() => {
     fetchStats();
+    return () => {
+      if (autoResetTimeoutRef.current) {
+        clearTimeout(autoResetTimeoutRef.current);
+      }
+    };
   }, []);
 
   const fetchStats = async () => {
@@ -66,51 +104,139 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     setTotalScanned(stats.total_scans);
   };
 
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    if (scanned || verifying) return;
-    setScanned(true);
-    setVerifying(true);
-
+  const playHaptic = (type: 'success' | 'warning' | 'error' | 'medium') => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {}
-
-    const res = await EntryService.verifyTicket(data);
-    setVerifying(false);
-    setResult(res);
-
-    if (res.success && res.status === 'MARKED') {
-      try {
+      if (type === 'success') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
-      setTotalScanned(prev => prev + 1);
-    } else {
-      try {
+      } else if (type === 'warning') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else if (type === 'error') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } catch {}
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch {}
+  };
+
+  const scheduleAutoReset = (delay: number) => {
+    if (autoResetTimeoutRef.current) {
+      clearTimeout(autoResetTimeoutRef.current);
     }
+    autoResetTimeoutRef.current = setTimeout(() => {
+      resetScanner();
+    }, delay);
+  };
+
+  const processTokenVerification = async (token: string) => {
+    setScanState('VERIFYING');
+    setErrorMsg(null);
+    playHaptic('medium');
+
+    const res = await EntryService.verifyTicket(token);
+
+    if (!res.success) {
+      playHaptic('error');
+      if (res.error?.code === 'UNPAID_TICKET') {
+        setScanState('UNPAID');
+        setStudent(res.data?.student || res.student || null);
+      } else {
+        setScanState('INVALID');
+        setErrorMsg(res.error?.message || 'Invalid or unregistered QR code.');
+      }
+      return;
+    }
+
+    const resultData = res.data || res;
+    const resolvedStudent = resultData.student || res.student;
+    const resolvedStatus = resultData.status || res.status;
+    const resolvedEntryDetails = resultData.entry_details || res.entry_details;
+    const isTest = !!resultData.is_test;
+
+    setStudent(resolvedStudent);
+    setEntryDetails(resolvedEntryDetails);
+    setIsTestModeScanned(isTest);
+
+    if (resolvedStatus === 'MARKED') {
+      playHaptic('success');
+      setScanState('MARKED');
+      fetchStats();
+      scheduleAutoReset(3500);
+    } else if (resolvedStatus === 'ALREADY_ENTERED') {
+      playHaptic('warning');
+      setScanState('ALREADY_ENTERED');
+    } else if (resolvedStatus === 'PENDING_CONFIRMATION' || resolvedStudent) {
+      playHaptic('medium');
+      setScanState('PENDING_CONFIRMATION');
+    } else {
+      playHaptic('error');
+      setScanState('INVALID');
+      setErrorMsg('Unexpected ticket response.');
+    }
+  };
+
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    if (scanState !== 'SCANNING' || isProcessingRef.current) return;
+
+    const clean = data.trim();
+    if (!clean) return;
+
+    const now = Date.now();
+    if (clean === lastScannedTokenRef.current && now - lastScanTimeRef.current < 4000) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    lastScannedTokenRef.current = clean;
+    lastScanTimeRef.current = now;
+
+    await processTokenVerification(clean);
   };
 
   const handleManualSubmit = async () => {
     if (!manualToken.trim()) return;
+    const token = manualToken.trim();
     setManualModalVisible(false);
-    setScanned(true);
-    setVerifying(true);
-
-    const res = await EntryService.verifyTicket(manualToken.trim());
-    setVerifying(false);
-    setResult(res);
     setManualToken('');
+    isProcessingRef.current = true;
+    await processTokenVerification(token);
+  };
 
-    if (res.success && res.status === 'MARKED') {
-      setTotalScanned(prev => prev + 1);
+  const handleMarkEntry = async (actionType: 'ENTRY' | 'RE_ENTRY') => {
+    if (!student?.id) return;
+    setMarkingEntry(true);
+
+    try {
+      const res = await EntryService.markEntry(student.id, actionType, isTestModeScanned);
+      setMarkingEntry(false);
+
+      if (res.success) {
+        playHaptic('success');
+        setScanState('MARKED');
+        fetchStats();
+        scheduleAutoReset(3500);
+      } else {
+        playHaptic('error');
+        setScanState('INVALID');
+        setErrorMsg(res.error?.message || 'Failed to mark entry check-in.');
+      }
+    } catch (err: any) {
+      setMarkingEntry(false);
+      playHaptic('error');
+      setScanState('INVALID');
+      setErrorMsg(err?.message || 'Network connectivity error.');
     }
   };
 
   const resetScanner = () => {
-    setResult(null);
-    setScanned(false);
-    setVerifying(false);
+    if (autoResetTimeoutRef.current) {
+      clearTimeout(autoResetTimeoutRef.current);
+      autoResetTimeoutRef.current = null;
+    }
+    setStudent(null);
+    setEntryDetails(null);
+    setErrorMsg(null);
+    setScanState('SCANNING');
+    isProcessingRef.current = false;
   };
 
   // On-Spot Calculations & Handlers
@@ -187,16 +313,12 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     setOnSpotSubmitting(false);
 
     if (res.success) {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
+      playHaptic('success');
       setTotalScanned(prev => prev + 1);
       setOnSpotSuccessData(res.data);
       setOnSpotStep('SUCCESS');
     } else {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } catch {}
+      playHaptic('error');
       setOnSpotError(res.error?.message || 'Failed to confirm on-spot entry.');
     }
   };
@@ -242,21 +364,21 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
     );
   }
 
-  const student = result?.student || result?.data?.student;
-  const status = result?.status || result?.data?.status;
-  const isSuccess = (result?.success === true) && (status === 'MARKED' || status === 'PENDING_CONFIRMATION' || !!student);
-  const isAlreadyEntered = status === 'ALREADY_ENTERED';
-  const isAdminTest = student?.id === 'admin-test-id' || result?.message?.includes('admin') || result?.data?.message?.includes('admin');
-  const displayMessage = result?.message || result?.data?.message || result?.error?.message || (isSuccess ? 'Entry scanned and verified.' : 'Invalid ticket.');
+  const studentPhotoUri = student?.photo_url
+    ? student.photo_url
+    : student?.id
+    ? `${APP_CONFIG.API_BASE_URL}/api/admin/registrations/${student.id}/photo`
+    : undefined;
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#070417" />
+      <StatusBar barStyle="light-content" backgroundColor="#060214" />
 
       {/* Top Header Bar */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Algo-Rhythm 2026</Text>
+          <Text style={styles.headerCategory}>TERMINAL GATEWAY</Text>
+          <Text style={styles.headerTitle}>ALGO-RHYTHM 2K26</Text>
           <Text style={styles.headerSubtitle}>
             Coordinator: <Text style={styles.coordinatorName}>{coordinator.name || coordinator.email}</Text>
           </Text>
@@ -264,15 +386,15 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
 
         <View style={styles.headerRight}>
           <View style={styles.statsBadge}>
-            <Text style={styles.statsBadgeText}>✓ {totalScanned} Entered</Text>
+            <Text style={styles.statsBadgeText}>✓ {totalScanned} Scanned</Text>
           </View>
           <TouchableOpacity onPress={handleLogoutConfirm} style={styles.logoutBtn}>
-            <Text style={styles.logoutBtnText}>Exit</Text>
+            <Text style={styles.logoutBtnText}>Logout</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Main Camera Viewfinder */}
+      {/* Main Viewport & Camera */}
       <View style={styles.cameraContainer}>
         <CameraView
           style={StyleSheet.absoluteFillObject}
@@ -281,7 +403,7 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
           barcodeScannerSettings={{
             barcodeTypes: ['qr'],
           }}
-          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+          onBarcodeScanned={scanState === 'SCANNING' ? handleBarCodeScanned : undefined}
         />
 
         {/* Viewfinder Target Reticle Overlay */}
@@ -291,14 +413,11 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
             <View style={[styles.corner, styles.topRight]} />
             <View style={[styles.corner, styles.bottomLeft]} />
             <View style={[styles.corner, styles.bottomRight]} />
-            {verifying && (
-              <View style={styles.verifyingBox}>
-                <ActivityIndicator size="large" color="#ffffff" />
-                <Text style={styles.verifyingText}>Verifying Ticket...</Text>
-              </View>
-            )}
+            <View style={styles.scanningLine} />
           </View>
-          <Text style={styles.hintText}>Point camera at student's Ticket QR Code</Text>
+          <View style={styles.hintPill}>
+            <Text style={styles.hintText}>⚡ POINT CAMERA AT TICKET QR CODE</Text>
+          </View>
         </View>
       </View>
 
@@ -336,94 +455,304 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
         </TouchableOpacity>
       </View>
 
-      {/* Scan Result Modal / Card */}
-      {result && (
+      {/* VERIFYING OVERLAY */}
+      {scanState === 'VERIFYING' && (
+        <Modal visible={true} transparent animationType="fade">
+          <View style={styles.centerModalBackdrop}>
+            <View style={styles.verifyingCard}>
+              <ActivityIndicator size="large" color="#c084fc" />
+              <Text style={styles.verifyingCardTitle}>Verifying Ticket...</Text>
+              <Text style={styles.verifyingCardSubtitle}>Securing database lock</Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* PENDING_CONFIRMATION: TICKET FOUND (COORDINATOR VERIFICATION) */}
+      {scanState === 'PENDING_CONFIRMATION' && student && (
         <Modal visible={true} transparent animationType="slide">
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              {/* Header Status Pill */}
-              <View
-                style={[
-                  styles.resultHeader,
-                  isSuccess && styles.headerSuccess,
-                  isAlreadyEntered && styles.headerWarning,
-                  !isSuccess && !isAlreadyEntered && styles.headerError,
-                ]}
-              >
-                <Text style={styles.resultStatusText}>
-                  {isSuccess
-                    ? (isAdminTest ? '✅ TEST SCAN SUCCESSFUL' : '✅ ENTRY AUTHORIZED')
-                    : isAlreadyEntered
-                    ? '⚠️ ALREADY ENTERED'
-                    : '❌ ACCESS DENIED'}
-                </Text>
-                <Text style={styles.resultMessageText}>
-                  {displayMessage}
-                </Text>
-              </View>
+              <View style={styles.purpleTopAccent} />
 
-              {student && (
-                <ScrollView style={styles.studentInfoScroll}>
-                  {/* Photo & Name */}
-                  <View style={styles.studentRow}>
-                    <Image
-                      source={{
-                        uri: `${APP_CONFIG.API_BASE_URL}/api/admin/registrations/${student.id}/photo`,
-                      }}
-                      style={styles.studentPhoto}
-                      defaultSource={require('../../assets/splash.png')}
-                    />
-                    <View style={styles.studentMeta}>
-                      <Text style={styles.studentName}>{student.full_name}</Text>
-                      <Text style={styles.studentRegNo}>{student.registration_number}</Text>
-                      <View style={styles.badgesRow}>
-                        <View style={styles.yearBadge}>
-                          <Text style={styles.yearBadgeText}>{student.year}</Text>
-                        </View>
-                        {student.modeling === 'Yes' && (
-                          <View style={styles.modelingBadge}>
-                            <Text style={styles.modelingBadgeText}>👑 Modeling</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Status Pill */}
+                <View style={styles.pillContainer}>
+                  <View style={styles.ticketFoundPill}>
+                    <Text style={styles.ticketFoundPillText}>✓ TICKET FOUND</Text>
                   </View>
+                </View>
 
-                  {/* School & Ticket Details */}
-                  <View style={styles.detailBox}>
-                    <Text style={styles.detailLabel}>SCHOOL / DEPARTMENT</Text>
-                    <Text style={styles.detailValue}>{student.school_name || 'N/A'}</Text>
-                  </View>
-
-                  <View style={styles.detailBox}>
-                    <Text style={styles.detailLabel}>TICKET ID</Text>
-                    <Text style={styles.ticketIdText}>#{student.ticket_id || 'PENDING'}</Text>
-                  </View>
-
-                  {/* If Already Entered details */}
-                  {isAlreadyEntered && result.entry_details && (
-                    <View style={styles.warningBox}>
-                      <Text style={styles.warningBoxTitle}>Previous Check-in Record:</Text>
-                      <Text style={styles.warningBoxText}>
-                        First Scanned:{' '}
-                        {result.entry_details.first_scanned_at
-                          ? new Date(result.entry_details.first_scanned_at).toLocaleTimeString()
-                          : 'N/A'}
-                      </Text>
-                      {result.entry_details.scanned_by && (
-                        <Text style={styles.warningBoxText}>
-                          Scanned By: {result.entry_details.scanned_by}
-                        </Text>
-                      )}
+                {/* Large Student Photo */}
+                <View style={styles.photoContainer}>
+                  {studentPhotoUri ? (
+                    <Image source={{ uri: studentPhotoUri }} style={styles.studentLargePhoto} />
+                  ) : (
+                    <View style={[styles.studentLargePhoto, styles.photoPlaceholder]}>
+                      <Text style={styles.photoPlaceholderText}>NO PHOTO</Text>
                     </View>
                   )}
-                </ScrollView>
-              )}
+                </View>
 
-              {/* Reset / Next Scan Button */}
-              <TouchableOpacity style={styles.nextScanBtn} onPress={resetScanner}>
-                <Text style={styles.nextScanBtnText}>SCAN NEXT CANDIDATE (RESET)</Text>
-              </TouchableOpacity>
+                {/* Student Info */}
+                <View style={styles.studentInfoCenter}>
+                  <Text style={styles.studentFullName}>{student.full_name}</Text>
+                  <Text style={styles.studentTicketId}>Ticket ID: {student.ticket_id || 'N/A'}</Text>
+                  <Text style={styles.studentRegNoBold}>{student.registration_number}</Text>
+                  <Text style={styles.studentSubDetails}>
+                    {student.year} &bull; {student.school_name || 'School of Computing'}
+                  </Text>
+                  {student.modeling === 'Yes' && (
+                    <View style={styles.modelingBadge}>
+                      <Text style={styles.modelingBadgeText}>👑 MODELING CANDIDATE</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Payment & Entry Status Grid */}
+                <View style={styles.statusGrid}>
+                  <View style={styles.statusGridBox}>
+                    <Text style={styles.statusGridLabel}>PAYMENT STATUS</Text>
+                    <Text style={styles.statusPaidText}>✓ PAID</Text>
+                  </View>
+                  <View style={styles.statusGridBox}>
+                    <Text style={styles.statusGridLabel}>CURRENT STATUS</Text>
+                    <Text style={styles.statusNotEnteredText}>NOT ENTERED</Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.actionGrid}>
+                  <TouchableOpacity
+                    style={styles.rejectBtn}
+                    onPress={resetScanner}
+                    disabled={markingEntry}
+                  >
+                    <Text style={styles.rejectBtnText}>Reject Entry</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.markEntryBtn}
+                    onPress={() => handleMarkEntry('ENTRY')}
+                    disabled={markingEntry}
+                  >
+                    {markingEntry ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.markEntryBtnText}>Verify & Mark Entry</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* MARKED: ENTRY MARKED SUCCESSFULLY */}
+      {scanState === 'MARKED' && student && (
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.emeraldTopAccent} />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.pillContainer}>
+                  <View style={styles.markedSuccessPill}>
+                    <Text style={styles.markedSuccessPillText}>✓ ENTRY MARKED SUCCESSFULLY</Text>
+                  </View>
+                </View>
+
+                <View style={styles.photoContainer}>
+                  {studentPhotoUri ? (
+                    <Image source={{ uri: studentPhotoUri }} style={styles.studentMediumPhoto} />
+                  ) : (
+                    <View style={[styles.studentMediumPhoto, styles.photoPlaceholder]}>
+                      <Text style={styles.photoPlaceholderText}>NO PHOTO</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.studentInfoCenter}>
+                  <Text style={styles.studentFullName}>{student.full_name}</Text>
+                  <Text style={styles.studentTicketId}>Ticket ID: {student.ticket_id || 'N/A'}</Text>
+                  <Text style={styles.studentRegNoBold}>{student.registration_number}</Text>
+                  <Text style={styles.studentSubDetails}>
+                    {student.year} &bull; {student.school_name || 'School of Computing'}
+                  </Text>
+                </View>
+
+                <View style={styles.welcomeBox}>
+                  <Text style={styles.welcomeTitle}>Welcome to ALGO-RHYTHM 2K26 🎉</Text>
+                  <Text style={styles.welcomeSubtitle}>
+                    Scanned by: {coordinator.name || coordinator.email} &bull; {new Date().toLocaleTimeString()}
+                  </Text>
+                </View>
+
+                <TouchableOpacity style={styles.scanNextBtn} onPress={resetScanner}>
+                  <Text style={styles.scanNextBtnText}>SCAN NEXT TICKET</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* ALREADY_ENTERED: WARNING */}
+      {scanState === 'ALREADY_ENTERED' && student && (
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.redTopAccent} />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.pillContainer}>
+                  <View style={styles.alreadyEnteredPill}>
+                    <Text style={styles.alreadyEnteredPillText}>⚠️ ALREADY ENTERED</Text>
+                  </View>
+                </View>
+
+                <View style={styles.photoContainer}>
+                  {studentPhotoUri ? (
+                    <Image source={{ uri: studentPhotoUri }} style={styles.studentMediumPhoto} />
+                  ) : (
+                    <View style={[styles.studentMediumPhoto, styles.photoPlaceholder]}>
+                      <Text style={styles.photoPlaceholderText}>NO PHOTO</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.studentInfoCenter}>
+                  <Text style={styles.studentFullName}>{student.full_name}</Text>
+                  <Text style={styles.studentTicketId}>Ticket ID: {student.ticket_id || 'N/A'}</Text>
+                  <Text style={styles.studentRegNoBold}>{student.registration_number}</Text>
+                </View>
+
+                <View style={styles.statusGrid}>
+                  <View style={styles.statusGridBox}>
+                    <Text style={styles.statusGridLabel}>PAYMENT STATUS</Text>
+                    <Text style={styles.statusPaidText}>✓ PAID</Text>
+                  </View>
+                  <View style={[styles.statusGridBox, styles.statusGridBoxRed]}>
+                    <Text style={styles.statusGridLabelRed}>CURRENT STATUS</Text>
+                    <Text style={styles.statusAlreadyText}>ALREADY ENTERED</Text>
+                  </View>
+                </View>
+
+                {entryDetails && (
+                  <View style={styles.prevAuditBox}>
+                    <Text style={styles.prevAuditHeading}>PREVIOUS ENTRY RECORD</Text>
+                    <View style={styles.prevAuditRow}>
+                      <Text style={styles.prevAuditLabel}>Previous Entry Time:</Text>
+                      <Text style={styles.prevAuditValue}>
+                        {entryDetails.entry_time
+                          ? new Date(entryDetails.entry_time).toLocaleString()
+                          : 'N/A'}
+                      </Text>
+                    </View>
+                    <View style={styles.prevAuditRow}>
+                      <Text style={styles.prevAuditLabel}>Scanned By:</Text>
+                      <Text style={styles.prevAuditValue}>{entryDetails.scanned_by || 'Coordinator'}</Text>
+                    </View>
+                    <View style={styles.prevAuditRow}>
+                      <Text style={styles.prevAuditLabel}>Scanner Device:</Text>
+                      <Text style={styles.prevAuditValue}>{entryDetails.scanner_device || 'Terminal'}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.actionGrid}>
+                  <TouchableOpacity
+                    style={styles.dismissBtn}
+                    onPress={resetScanner}
+                    disabled={markingEntry}
+                  >
+                    <Text style={styles.dismissBtnText}>Dismiss / Reset</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.reEntryBtn}
+                    onPress={() => handleMarkEntry('RE_ENTRY')}
+                    disabled={markingEntry}
+                  >
+                    {markingEntry ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.reEntryBtnText}>Allow Re-Entry</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* UNPAID TICKET SCREEN */}
+      {scanState === 'UNPAID' && (
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.yellowTopAccent} />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.pillContainer}>
+                  <View style={styles.unpaidPill}>
+                    <Text style={styles.unpaidPillText}>❌ PAYMENT NOT VERIFIED</Text>
+                  </View>
+                </View>
+
+                <View style={styles.errorIconCircle}>
+                  <Text style={{ fontSize: 32 }}>⚠️</Text>
+                </View>
+
+                {student && (
+                  <View style={styles.studentInfoCenter}>
+                    <Text style={styles.studentFullName}>{student.full_name}</Text>
+                    <Text style={styles.studentRegNoBold}>{student.registration_number}</Text>
+                  </View>
+                )}
+
+                <Text style={styles.unpaidWarningText}>
+                  Entry is not permitted. This ticket belongs to an unpaid registration.
+                </Text>
+
+                <TouchableOpacity style={styles.dismissBtnFull} onPress={resetScanner}>
+                  <Text style={styles.dismissBtnText}>SCAN NEXT TICKET</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* INVALID TICKET SCREEN */}
+      {scanState === 'INVALID' && (
+        <Modal visible={true} transparent animationType="slide">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.redTopAccent} />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.pillContainer}>
+                  <View style={styles.invalidPill}>
+                    <Text style={styles.invalidPillText}>❌ INVALID TICKET</Text>
+                  </View>
+                </View>
+
+                <View style={styles.errorIconCircleRed}>
+                  <Text style={{ fontSize: 32 }}>✕</Text>
+                </View>
+
+                <Text style={styles.scanRejectedHeading}>Scan Rejected</Text>
+                <Text style={styles.invalidErrorText}>
+                  {errorMsg || 'Ticket could not be verified or record was not found.'}
+                </Text>
+
+                <TouchableOpacity style={styles.dismissBtnFull} onPress={resetScanner}>
+                  <Text style={styles.dismissBtnText}>SCAN NEXT TICKET</Text>
+                </TouchableOpacity>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -431,7 +760,7 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
 
       {/* Manual Code Modal */}
       <Modal visible={manualModalVisible} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
+        <View style={styles.centerModalBackdrop}>
           <View style={styles.manualCard}>
             <Text style={styles.manualTitle}>Manual Ticket Verification</Text>
             <Text style={styles.manualSubtitle}>
@@ -457,7 +786,7 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.manualSubmitBtn} onPress={handleManualSubmit}>
-                <Text style={styles.manualSubmitText}>Verify</Text>
+                <Text style={styles.manualSubmitText}>Verify Ticket</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -522,14 +851,12 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                     </TouchableOpacity>
                   </View>
 
-                  {/* Year & Pricing Badge */}
+                  {/* Year & Pricing Banner */}
                   <View style={styles.onSpotFeeBanner}>
                     <Text style={styles.onSpotFeeBannerTitle}>
                       {onSpotRegNo.trim() ? `Detected: ${onSpotYear}` : 'Batch Auto-Detection'}
                     </Text>
-                    <Text style={styles.onSpotFeeBannerAmount}>
-                      Ticket Fee: ₹{onSpotFee}
-                    </Text>
+                    <Text style={styles.onSpotFeeBannerAmount}>Ticket Fee: ₹{onSpotFee}</Text>
                   </View>
 
                   {onSpotError && (
@@ -631,7 +958,9 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                   <View style={styles.onSpotHeaderRow}>
                     <View>
                       <Text style={styles.onSpotMainTitle}>💳 Collect Payment</Text>
-                      <Text style={styles.onSpotMainSubtitle}>Attendee: {onSpotName} ({onSpotYear})</Text>
+                      <Text style={styles.onSpotMainSubtitle}>
+                        Attendee: {onSpotName} ({onSpotYear})
+                      </Text>
                     </View>
                     <TouchableOpacity
                       onPress={() => setOnSpotStep('FORM')}
@@ -641,7 +970,6 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                     </TouchableOpacity>
                   </View>
 
-                  {/* Amount Banner */}
                   <View style={styles.qrAmountHeader}>
                     <Text style={styles.qrAmountLabel}>AMOUNT TO PAY</Text>
                     <Text style={styles.qrAmountValue}>₹{onSpotFee}</Text>
@@ -650,7 +978,6 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                     </Text>
                   </View>
 
-                  {/* Razorpay QR Code Display Card */}
                   <View style={styles.razorpayQrWrapper}>
                     <Image
                       source={is1stYearOnSpot ? qr100Img : qr200Img}
@@ -669,7 +996,6 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
                     </View>
                   )}
 
-                  {/* Confirmation Button */}
                   <TouchableOpacity
                     style={[styles.onSpotConfirmBtn, onSpotSubmitting && { opacity: 0.6 }]}
                     onPress={handleConfirmOnSpotPayment}
@@ -760,11 +1086,11 @@ export const ScannerScreen: React.FC<ScannerScreenProps> = ({ coordinator, onLog
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#070417',
+    backgroundColor: '#060214',
   },
   centerContainer: {
     flex: 1,
-    backgroundColor: '#070417',
+    backgroundColor: '#060214',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -801,15 +1127,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 48,
     paddingBottom: 16,
-    backgroundColor: '#0c0724',
+    backgroundColor: '#0b0524',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
+  headerCategory: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#c084fc',
+    letterSpacing: 1.5,
+  },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: 0.5,
+    marginTop: 2,
   },
   headerSubtitle: {
     fontSize: 11,
@@ -826,20 +1159,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statsBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: 'rgba(192, 132, 252, 0.15)',
+    borderColor: 'rgba(192, 132, 252, 0.3)',
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   statsBadgeText: {
-    color: '#6ee7b7',
+    color: '#d8b4fe',
     fontSize: 11,
     fontWeight: '800',
   },
   logoutBtn: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -857,11 +1192,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
   targetFrame: {
-    width: 250,
-    height: 250,
+    width: 260,
+    height: 260,
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
@@ -870,60 +1205,69 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 32,
     height: 32,
-    borderColor: '#a855f7',
+    borderColor: '#c084fc',
   },
   topLeft: {
     top: 0,
     left: 0,
     borderTopWidth: 4,
     borderLeftWidth: 4,
+    borderTopLeftRadius: 16,
   },
   topRight: {
     top: 0,
     right: 0,
     borderTopWidth: 4,
     borderRightWidth: 4,
+    borderTopRightRadius: 16,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
+    borderBottomLeftRadius: 16,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 4,
     borderRightWidth: 4,
+    borderBottomRightRadius: 16,
   },
-  verifyingBox: {
-    backgroundColor: 'rgba(12, 7, 36, 0.85)',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
+  scanningLine: {
+    position: 'absolute',
+    top: '50%',
+    left: 10,
+    right: 10,
+    height: 2,
+    backgroundColor: '#a855f7',
+    shadowColor: '#a855f7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
   },
-  verifyingText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 8,
+  hintPill: {
+    marginTop: 24,
+    backgroundColor: 'rgba(6, 2, 20, 0.85)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.25)',
   },
   hintText: {
-    color: '#e2e8f0',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
+    color: '#d8b4fe',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   bottomBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 16,
     paddingHorizontal: 20,
-    backgroundColor: '#0c0724',
+    backgroundColor: '#0b0524',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -953,177 +1297,477 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'flex-end',
   },
-  modalCard: {
-    backgroundColor: '#0f082e',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    maxHeight: '85%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  resultHeader: {
-    padding: 16,
-    borderRadius: 16,
+  centerModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    padding: 24,
   },
-  headerSuccess: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderColor: '#10b981',
+  verifyingCard: {
+    backgroundColor: '#0b0524',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
     borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.3)',
   },
-  headerWarning: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    borderColor: '#f59e0b',
-    borderWidth: 1,
-  },
-  headerError: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-  },
-  resultStatusText: {
+  verifyingCardTitle: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 16,
   },
-  resultMessageText: {
-    color: '#cbd5e1',
+  verifyingCardSubtitle: {
+    color: '#94a3b8',
     fontSize: 12,
     marginTop: 4,
-    textAlign: 'center',
   },
-  studentInfoScroll: {
+  modalCard: {
+    backgroundColor: '#0b0524',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  purpleTopAccent: {
+    height: 4,
+    width: 60,
+    backgroundColor: '#a855f7',
+    borderRadius: 2,
+    alignSelf: 'center',
     marginBottom: 16,
   },
-  studentRow: {
-    flexDirection: 'row',
-    gap: 16,
+  emeraldTopAccent: {
+    height: 4,
+    width: 60,
+    backgroundColor: '#10b981',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  redTopAccent: {
+    height: 4,
+    width: 60,
+    backgroundColor: '#ef4444',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  yellowTopAccent: {
+    height: 4,
+    width: 60,
+    backgroundColor: '#f59e0b',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  pillContainer: {
     alignItems: 'center',
     marginBottom: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    padding: 12,
-    borderRadius: 16,
   },
-  studentPhoto: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
+  ticketFoundPill: {
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  ticketFoundPillText: {
+    color: '#c084fc',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  markedSuccessPill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  markedSuccessPillText: {
+    color: '#6ee7b7',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  alreadyEnteredPill: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  alreadyEnteredPillText: {
+    color: '#fca5a5',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  unpaidPill: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  unpaidPillText: {
+    color: '#fcd34d',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  invalidPill: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  invalidPillText: {
+    color: '#fca5a5',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  photoContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  studentLargePhoto: {
+    width: 150,
+    height: 150,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: 'rgba(168, 85, 247, 0.4)',
     backgroundColor: '#000000',
   },
-  studentMeta: {
-    flex: 1,
+  studentMediumPhoto: {
+    width: 120,
+    height: 120,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    backgroundColor: '#000000',
   },
-  studentName: {
-    fontSize: 16,
+  photoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoPlaceholderText: {
+    color: '#64748b',
+    fontSize: 11,
     fontWeight: '800',
-    color: '#ffffff',
   },
-  studentRegNo: {
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  studentInfoCenter: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  studentFullName: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#ffffff',
+    textAlign: 'center',
+  },
+  studentTicketId: {
+    fontSize: 13,
     color: '#c084fc',
-    marginTop: 2,
-  },
-  badgesRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 6,
-  },
-  yearBadge: {
-    backgroundColor: '#9333ea',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  yearBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '800',
+    marginTop: 4,
+  },
+  studentRegNoBold: {
+    fontSize: 13,
+    color: '#e2e8f0',
+    fontWeight: '800',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+  studentSubDetails: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+    textTransform: 'uppercase',
   },
   modelingBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: 1,
+    marginTop: 8,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   modelingBadgeText: {
     color: '#fcd34d',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  detailBox: {
-    marginBottom: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
-    padding: 10,
-    borderRadius: 12,
+  statusGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
   },
-  detailLabel: {
+  statusGridBox: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  statusGridBoxRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  statusGridLabel: {
     fontSize: 9,
-    color: '#64748b',
     fontWeight: '800',
+    color: '#64748b',
     letterSpacing: 0.5,
   },
-  detailValue: {
-    fontSize: 13,
-    color: '#e2e8f0',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  ticketIdText: {
-    fontSize: 13,
-    color: '#c084fc',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  warningBox: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 6,
-  },
-  warningBoxTitle: {
-    color: '#fbbf24',
-    fontSize: 11,
+  statusGridLabelRed: {
+    fontSize: 9,
     fontWeight: '800',
-    marginBottom: 4,
+    color: '#f87171',
+    letterSpacing: 0.5,
   },
-  warningBoxText: {
-    color: '#fde68a',
-    fontSize: 11,
+  statusPaidText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#34d399',
+    marginTop: 4,
   },
-  nextScanBtn: {
-    backgroundColor: '#9333ea',
-    paddingVertical: 14,
+  statusNotEnteredText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#eab308',
+    marginTop: 4,
+  },
+  statusAlreadyText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#f87171',
+    marginTop: 4,
+  },
+  actionGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingTop: 8,
+  },
+  rejectBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectBtnText: {
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  markEntryBtn: {
+    flex: 1.5,
+    backgroundColor: '#9333ea',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#9333ea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  markEntryBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  welcomeBox: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderRadius: 16,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  welcomeTitle: {
+    color: '#d8b4fe',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  welcomeSubtitle: {
+    color: '#94a3b8',
+    fontSize: 10,
+    marginTop: 4,
+  },
+  scanNextBtn: {
+    backgroundColor: '#9333ea',
+    borderRadius: 16,
+    paddingVertical: 14,
     alignItems: 'center',
     shadowColor: '#9333ea',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 4,
   },
-  nextScanBtnText: {
+  scanNextBtnText: {
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  prevAuditBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 20,
+  },
+  prevAuditHeading: {
+    color: '#f87171',
+    fontSize: 9,
+    fontWeight: '900',
     letterSpacing: 1,
+    marginBottom: 8,
+  },
+  prevAuditRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+  },
+  prevAuditLabel: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
+  prevAuditValue: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dismissBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dismissBtnText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  dismissBtnFull: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  reEntryBtn: {
+    flex: 1.5,
+    backgroundColor: '#d97706',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  reEntryBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  errorIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorIconCircleRed: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  unpaidWarningText: {
+    color: '#fde68a',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    paddingHorizontal: 16,
+  },
+  scanRejectedHeading: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  invalidErrorText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 20,
+    paddingHorizontal: 16,
   },
   manualCard: {
-    backgroundColor: '#0f082e',
+    backgroundColor: '#0b0524',
     borderRadius: 24,
     padding: 24,
-    marginHorizontal: 24,
+    width: '100%',
+    maxWidth: 360,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
@@ -1178,7 +1822,7 @@ const styles = StyleSheet.create({
 
   // On-Spot Styles
   onSpotCard: {
-    backgroundColor: '#0f082e',
+    backgroundColor: '#0b0524',
     borderRadius: 24,
     padding: 20,
     width: '100%',
