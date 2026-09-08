@@ -52,6 +52,9 @@ export default function CoordinatorScanner() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const isProcessingRef = useRef(false);
+  const lastScannedTokenRef = useRef<string | null>(null);
+  const lastScanTimeRef = useRef(0);
   const scannerId = 'coordinator-viewport';
 
   // 1. Auth check on mount
@@ -167,24 +170,44 @@ export default function CoordinatorScanner() {
 
   // Start Camera Scanner
   const startCamera = async () => {
+    // Reset the scan processing lock when starting a new session
+    isProcessingRef.current = false;
+
     try {
-      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-        return;
+      // Clean up any existing stale scanner instance
+      if (html5QrCodeRef.current) {
+        try {
+          if (html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop();
+          }
+        } catch (e) {
+          // Ignore - old scanner may have lost its DOM element
+        }
+        html5QrCodeRef.current = null;
       }
-      
+
       const html5QrCode = new Html5Qrcode(scannerId);
       html5QrCodeRef.current = html5QrCode;
 
       await html5QrCode.start(
         { facingMode: 'environment' },
         {
-          fps: 10,
+          fps: 5,
           qrbox: (width, height) => {
             const size = Math.min(width, height) * 0.65;
             return { width: size, height: size };
           }
         },
         (decodedText) => {
+          // SYNCHRONOUS LOCK: Prevent multiple concurrent scan handlers from rapid frames
+          if (isProcessingRef.current) return;
+          // COOLDOWN: Ignore same QR token within 5 seconds to prevent re-scan loops
+          const now = Date.now();
+          if (decodedText === lastScannedTokenRef.current && now - lastScanTimeRef.current < 5000) return;
+          // Set lock SYNCHRONOUSLY before any async work begins
+          isProcessingRef.current = true;
+          lastScannedTokenRef.current = decodedText;
+          lastScanTimeRef.current = now;
           handleTicketScanned(decodedText);
         },
         () => {}
@@ -203,12 +226,17 @@ export default function CoordinatorScanner() {
 
   // Stop Camera Scanner
   const stopCamera = async () => {
-    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+    const scanner = html5QrCodeRef.current;
+    html5QrCodeRef.current = null;
+    setCameraActive(false);
+    if (scanner) {
       try {
-        await html5QrCodeRef.current.stop();
-        setCameraActive(false);
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
       } catch (err) {
-        console.error('Stop scanner error:', err);
+        // Silently handle - DOM element may have been unmounted by React
+        console.warn('Stop scanner warning:', err);
       }
     }
   };
@@ -246,8 +274,7 @@ export default function CoordinatorScanner() {
           setErrorMsg(res.error?.message || 'Invalid QR code.');
         }
 
-        // Auto reset scanner after 3.5 seconds
-        setTimeout(resetScanner, 3500);
+        // Manual reset required - coordinator presses "Scan Next Ticket"
         return;
       }
 
@@ -261,7 +288,7 @@ export default function CoordinatorScanner() {
         playBeep('success');
         setScanState('MARKED');
         fetchMyStats();
-        setTimeout(resetScanner, 3500);
+        // Manual reset required - no auto-restart to prevent scan loops
       } else if (resultData.status === 'ALREADY_ENTERED') {
         triggerHaptic([150, 100, 150]);
         playBeep('already');
@@ -278,7 +305,7 @@ export default function CoordinatorScanner() {
       playBeep('error');
       setScanState('INVALID');
       setErrorMsg('Network connectivity error.');
-      setTimeout(resetScanner, 3500);
+      // Manual reset required
     }
   };
 
@@ -310,7 +337,7 @@ export default function CoordinatorScanner() {
         playBeep('error');
         setScanState('INVALID');
         setErrorMsg(res.error?.message || 'Failed to mark entry.');
-        setTimeout(resetScanner, 3500);
+        // Manual reset required
       } else {
         triggerHaptic([80, 50, 80]);
         playBeep('success');
@@ -319,8 +346,7 @@ export default function CoordinatorScanner() {
         // Refresh local scanning logs
         fetchMyStats();
         
-        // Auto reset scanner after 3 seconds for fast checking
-        setTimeout(resetScanner, 3000);
+        // Manual reset required - no auto-restart to prevent scan loops
       }
     } catch (err) {
       console.error(err);
@@ -328,14 +354,17 @@ export default function CoordinatorScanner() {
       playBeep('error');
       setScanState('INVALID');
       setErrorMsg('Network connectivity error.');
-      setTimeout(resetScanner, 3500);
+      // Manual reset required
     } finally {
       setMarkingEntry(false);
     }
   };
 
-  // Reset scanner to scanning state
+  // Reset scanner to scanning state (manual only - no auto-reset loops)
   const resetScanner = async () => {
+    // Clear processing lock and cooldown to allow fresh scans
+    isProcessingRef.current = false;
+    lastScannedTokenRef.current = null;
     setStudent(null);
     setEntryDetails(null);
     setErrorMsg(null);
@@ -538,6 +567,14 @@ export default function CoordinatorScanner() {
                 <p className="text-purple-300 text-xs font-bold uppercase tracking-wide">Welcome to ALGO-RHYTHM 2K26 🎉</p>
                 <p className="text-slate-500 text-[9px] uppercase mt-1">Scanned by: {coordinator.name} &bull; {new Date().toLocaleTimeString()}</p>
               </div>
+
+              <button
+                onClick={resetScanner}
+                className="w-full inline-flex justify-center items-center gap-2 py-3 mt-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-purple-500/10"
+              >
+                <Scan className="w-4 h-4" />
+                Scan Next Ticket
+              </button>
             </div>
           </div>
         )}
@@ -637,6 +674,14 @@ export default function CoordinatorScanner() {
               <p className="text-xs text-yellow-300 leading-normal max-w-xs mx-auto">
                 Entry is not permitted. This ticket belongs to an unpaid registration.
               </p>
+
+              <button
+                onClick={resetScanner}
+                className="w-full max-w-xs inline-flex justify-center items-center gap-2 py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
+              >
+                <Scan className="w-4 h-4" />
+                Scan Next Ticket
+              </button>
             </div>
           </div>
         )}
@@ -658,6 +703,14 @@ export default function CoordinatorScanner() {
                   {errorMsg || 'Ticket could not be verified.'}
                 </p>
               </div>
+
+              <button
+                onClick={resetScanner}
+                className="w-full max-w-xs inline-flex justify-center items-center gap-2 py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
+              >
+                <Scan className="w-4 h-4" />
+                Scan Next Ticket
+              </button>
             </div>
           </div>
         )}
