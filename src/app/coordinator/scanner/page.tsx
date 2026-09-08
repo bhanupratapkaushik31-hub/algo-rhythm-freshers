@@ -4,14 +4,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Html5Qrcode } from 'html5-qrcode';
-import { 
-  Scan, 
-  Camera, 
-  Loader2, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle, 
-  LogOut, 
+import {
+  Scan,
+  Camera,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  LogOut,
   Sparkles,
   ArrowRight,
   RefreshCw,
@@ -35,7 +35,7 @@ interface ScannedStudent {
 
 export default function CoordinatorScanner() {
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [coordinator, setCoordinator] = useState<any>(null);
   const [scanState, setScanState] = useState<ScanResultState>('SCANNING');
@@ -46,16 +46,26 @@ export default function CoordinatorScanner() {
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [markingEntry, setMarkingEntry] = useState(false);
   const [isTestModeScanned, setIsTestModeScanned] = useState(false);
-  
+
   // History & Statistics
   const [myStats, setMyStats] = useState({ total_scans: 0, recent_scans: [] as any[] });
   const [statsLoading, setStatsLoading] = useState(false);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const isProcessingRef = useRef(false);
+  const isScanningLockedRef = useRef(false);
   const lastScannedTokenRef = useRef<string | null>(null);
-  const lastScanTimeRef = useRef(0);
+  const lastScanTimeRef = useRef<number>(0);
+  const resetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scannerId = 'coordinator-viewport';
+
+  const scheduleAutoReset = (delay: number) => {
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+    }
+    resetTimeoutRef.current = setTimeout(() => {
+      resetScanner();
+    }, delay);
+  };
 
   // 1. Auth check on mount
   useEffect(() => {
@@ -65,32 +75,35 @@ export default function CoordinatorScanner() {
         router.push('/coordinator/login');
         return;
       }
-      
+
       fetch('/api/admin/profile', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
       })
-      .then(r => r.json())
-      .then((res2: any) => {
-        const profile = res2.success ? res2.data : null;
-        if (!profile || !['scanner', 'coordinator', 'admin', 'super_admin'].includes(profile.role) || profile.active === false) {
+        .then(r => r.json())
+        .then((res2: any) => {
+          const profile = res2.success ? res2.data : null;
+          if (!profile || !['scanner', 'coordinator', 'admin', 'super_admin'].includes(profile.role) || profile.active === false) {
+            supabase.auth.signOut();
+            router.push('/coordinator/login');
+          } else {
+            setCoordinator(profile);
+            setLoading(false);
+            fetchMyStats();
+            startCamera();
+          }
+        })
+        .catch(() => {
           supabase.auth.signOut();
           router.push('/coordinator/login');
-        } else {
-          setCoordinator(profile);
-          setLoading(false);
-          fetchMyStats();
-          startCamera();
-        }
-      })
-      .catch(() => {
-        supabase.auth.signOut();
-        router.push('/coordinator/login');
-      });
+        });
     });
 
     return () => {
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+      }
       stopCamera();
     };
   }, []);
@@ -170,19 +183,18 @@ export default function CoordinatorScanner() {
 
   // Start Camera Scanner
   const startCamera = async () => {
-    // Reset the scan processing lock when starting a new session
-    isProcessingRef.current = false;
-
     try {
-      // Clean up any existing stale scanner instance
+      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+        return;
+      }
+
       if (html5QrCodeRef.current) {
         try {
           if (html5QrCodeRef.current.isScanning) {
             await html5QrCodeRef.current.stop();
           }
-        } catch (e) {
-          // Ignore - old scanner may have lost its DOM element
-        }
+          html5QrCodeRef.current.clear();
+        } catch (_) {}
         html5QrCodeRef.current = null;
       }
 
@@ -192,32 +204,31 @@ export default function CoordinatorScanner() {
       await html5QrCode.start(
         { facingMode: 'environment' },
         {
-          fps: 5,
+          fps: 10,
           qrbox: (width, height) => {
             const size = Math.min(width, height) * 0.65;
             return { width: size, height: size };
           }
         },
         (decodedText) => {
-          // SYNCHRONOUS LOCK: Prevent multiple concurrent scan handlers from rapid frames
-          if (isProcessingRef.current) return;
-          // COOLDOWN: Ignore same QR token within 5 seconds to prevent re-scan loops
+          if (isScanningLockedRef.current) return;
           const now = Date.now();
-          if (decodedText === lastScannedTokenRef.current && now - lastScanTimeRef.current < 5000) return;
-          // Set lock SYNCHRONOUSLY before any async work begins
-          isProcessingRef.current = true;
+          if (decodedText === lastScannedTokenRef.current && (now - lastScanTimeRef.current) < 4000) {
+            return;
+          }
+          isScanningLockedRef.current = true;
           lastScannedTokenRef.current = decodedText;
           lastScanTimeRef.current = now;
           handleTicketScanned(decodedText);
         },
-        () => {}
+        () => { }
       );
 
       setCameraActive(true);
       setCameraPermission('granted');
     } catch (err: any) {
       console.error('Camera startup error:', err);
-      if (err.toString().includes('Permission')) {
+      if (err?.toString()?.includes('Permission')) {
         setCameraPermission('denied');
       }
       setCameraActive(false);
@@ -227,32 +238,32 @@ export default function CoordinatorScanner() {
   // Stop Camera Scanner
   const stopCamera = async () => {
     const scanner = html5QrCodeRef.current;
-    html5QrCodeRef.current = null;
-    setCameraActive(false);
     if (scanner) {
       try {
         if (scanner.isScanning) {
           await scanner.stop();
         }
       } catch (err) {
-        // Silently handle - DOM element may have been unmounted by React
-        console.warn('Stop scanner warning:', err);
+        console.error('Stop scanner error:', err);
+      } finally {
+        setCameraActive(false);
       }
     }
   };
 
   // Verify scanned token
   const handleTicketScanned = async (token: string) => {
+    isScanningLockedRef.current = true;
     await stopCamera();
     setScanState('VERIFYING');
     setErrorMsg(null);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       const response = await fetch('/api/entry/verify', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
@@ -263,7 +274,7 @@ export default function CoordinatorScanner() {
 
       if (!response.ok || !res.success) {
         triggerHaptic(300);
-        
+
         if (res.error?.code === 'UNPAID_TICKET') {
           playBeep('error');
           setScanState('UNPAID');
@@ -274,7 +285,8 @@ export default function CoordinatorScanner() {
           setErrorMsg(res.error?.message || 'Invalid QR code.');
         }
 
-        // Manual reset required - coordinator presses "Scan Next Ticket"
+        // Auto reset scanner after 3.5 seconds
+        scheduleAutoReset(3500);
         return;
       }
 
@@ -288,7 +300,7 @@ export default function CoordinatorScanner() {
         playBeep('success');
         setScanState('MARKED');
         fetchMyStats();
-        // Manual reset required - no auto-restart to prevent scan loops
+        scheduleAutoReset(3500);
       } else if (resultData.status === 'ALREADY_ENTERED') {
         triggerHaptic([150, 100, 150]);
         playBeep('already');
@@ -305,7 +317,7 @@ export default function CoordinatorScanner() {
       playBeep('error');
       setScanState('INVALID');
       setErrorMsg('Network connectivity error.');
-      // Manual reset required
+      scheduleAutoReset(3500);
     }
   };
 
@@ -337,16 +349,17 @@ export default function CoordinatorScanner() {
         playBeep('error');
         setScanState('INVALID');
         setErrorMsg(res.error?.message || 'Failed to mark entry.');
-        // Manual reset required
+        scheduleAutoReset(3500);
       } else {
         triggerHaptic([80, 50, 80]);
         playBeep('success');
         setScanState('MARKED');
-        
+
         // Refresh local scanning logs
         fetchMyStats();
-        
-        // Manual reset required - no auto-restart to prevent scan loops
+
+        // Auto reset scanner after 3 seconds for fast checking
+        scheduleAutoReset(3000);
       }
     } catch (err) {
       console.error(err);
@@ -354,26 +367,32 @@ export default function CoordinatorScanner() {
       playBeep('error');
       setScanState('INVALID');
       setErrorMsg('Network connectivity error.');
-      // Manual reset required
+      scheduleAutoReset(3500);
     } finally {
       setMarkingEntry(false);
     }
   };
 
-  // Reset scanner to scanning state (manual only - no auto-reset loops)
+  // Reset scanner to scanning state
   const resetScanner = async () => {
-    // Clear processing lock and cooldown to allow fresh scans
-    isProcessingRef.current = false;
-    lastScannedTokenRef.current = null;
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+      resetTimeoutRef.current = null;
+    }
     setStudent(null);
     setEntryDetails(null);
     setErrorMsg(null);
     setScanState('SCANNING');
-    startCamera();
+    isScanningLockedRef.current = false;
+    await startCamera();
   };
 
   // Handle Logout
   const handleLogout = async () => {
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+      resetTimeoutRef.current = null;
+    }
     await stopCamera();
     await supabase.auth.signOut();
     document.cookie = 'sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
@@ -391,14 +410,14 @@ export default function CoordinatorScanner() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#060214] text-slate-100 font-sans px-4 py-8 max-w-lg mx-auto w-full justify-between">
-      
+
       {/* 1. Header Area */}
       <header className="flex justify-between items-center pb-4 border-b border-white/5 mb-6">
         <div>
           <span className="text-[10px] text-purple-400 font-black tracking-widest uppercase">TERMINAL GATEWAY</span>
           <h1 className="text-lg font-black font-outfit text-white tracking-wide leading-none mt-1">ALGO-RHYTHM 2K26</h1>
         </div>
-        
+
         <button
           onClick={handleLogout}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs font-semibold rounded-xl transition-all cursor-pointer"
@@ -410,61 +429,59 @@ export default function CoordinatorScanner() {
 
       {/* 2. Main Scan Viewport / Status Cards */}
       <main className="flex-1 flex flex-col justify-center items-center py-2 w-full gap-6">
-        
-        {scanState === 'SCANNING' && (
-          <div className="w-full flex flex-col items-center gap-6">
-            
-            {/* Viewport container */}
-            <div className="relative w-full aspect-square bg-[#0b0524] rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">
-              <div id={scannerId} className="w-full h-full" />
 
-              {/* Scanning crosshair line overlays */}
-              {cameraActive && (
-                <div className="absolute inset-0 border-[30px] border-[#060214]/60 pointer-events-none flex items-center justify-center">
-                  <div className="w-[70%] h-[70%] border border-dashed border-purple-500/30 rounded-2xl relative">
-                    <div className="absolute top-0 inset-x-0 h-[2px] bg-purple-500 shadow-md shadow-purple-500/50 animate-bounce" />
-                  </div>
+        {/* Viewport container - kept mounted in DOM to prevent Html5Qrcode unmount/DOM exceptions */}
+        <div className={scanState === 'SCANNING' ? "w-full flex flex-col items-center gap-6" : "hidden"}>
+
+          <div className="relative w-full aspect-square bg-[#0b0524] rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">
+            <div id={scannerId} className="w-full h-full" />
+
+            {/* Scanning crosshair line overlays */}
+            {cameraActive && (
+              <div className="absolute inset-0 border-[30px] border-[#060214]/60 pointer-events-none flex items-center justify-center">
+                <div className="w-[70%] h-[70%] border border-dashed border-purple-500/30 rounded-2xl relative">
+                  <div className="absolute top-0 inset-x-0 h-[2px] bg-purple-500 shadow-md shadow-purple-500/50 animate-bounce" />
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* No camera prompt */}
-              {!cameraActive && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center gap-4 bg-[#0a0522]">
-                  {cameraPermission === 'denied' ? (
-                    <>
-                      <XCircle className="w-10 h-10 text-red-500" />
-                      <h3 className="font-bold text-white text-sm">Camera Blocked</h3>
-                      <p className="text-slate-500 text-xs leading-relaxed max-w-[250px]">
-                        Please allow camera permission in your settings to scan tickets.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-                      <p className="text-slate-500 text-xs">Initializing camera feed...</p>
-                    </>
-                  )}
-                  <button 
-                    onClick={startCamera}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-lg text-xs font-semibold text-white uppercase tracking-wider cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Retry Camera
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="text-center">
-              <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-purple-400 animate-pulse bg-purple-500/5 px-4 py-1.5 rounded-full border border-purple-500/10">
-                <Scan className="w-4 h-4" />
-                Scan Ticket QR Code
-              </span>
-              <p className="text-slate-500 text-[10px] uppercase mt-2">Status: READY TO SCAN</p>
-            </div>
-
+            {/* No camera prompt */}
+            {!cameraActive && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center gap-4 bg-[#0a0522]">
+                {cameraPermission === 'denied' ? (
+                  <>
+                    <XCircle className="w-10 h-10 text-red-500" />
+                    <h3 className="font-bold text-white text-sm">Camera Blocked</h3>
+                    <p className="text-slate-500 text-xs leading-relaxed max-w-[250px]">
+                      Please allow camera permission in your settings to scan tickets.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                    <p className="text-slate-500 text-xs">Initializing camera feed...</p>
+                  </>
+                )}
+                <button
+                  onClick={startCamera}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-lg text-xs font-semibold text-white uppercase tracking-wider cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry Camera
+                </button>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="text-center">
+            <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-purple-400 animate-pulse bg-purple-500/5 px-4 py-1.5 rounded-full border border-purple-500/10">
+              <Scan className="w-4 h-4" />
+              Scan Ticket QR Code
+            </span>
+            <p className="text-slate-500 text-[10px] uppercase mt-2">Status: READY TO SCAN</p>
+          </div>
+
+        </div>
 
         {scanState === 'VERIFYING' && (
           <div className="glass-card rounded-3xl p-12 text-center w-full flex flex-col items-center justify-center gap-4">
@@ -479,7 +496,7 @@ export default function CoordinatorScanner() {
           <div className="w-full glass-card rounded-3xl overflow-hidden border-purple-500/25 shadow-purple-500/5 shadow-2xl relative animate-fade-in">
             <div className="h-2 w-full bg-purple-500" />
             <div className="p-6 space-y-5 text-center flex flex-col items-center">
-              
+
               <span className="text-[10px] uppercase tracking-wider text-purple-400 font-extrabold bg-purple-500/10 px-3.5 py-1 rounded-full border border-purple-500/10 flex items-center gap-1.5 animate-pulse">
                 <CheckCircle className="w-4 h-4 text-purple-400" />
                 ✓ TICKET FOUND
@@ -487,9 +504,9 @@ export default function CoordinatorScanner() {
 
               {/* LARGE STUDENT PHOTO */}
               <div className="w-48 h-48 rounded-2xl overflow-hidden border-2 border-purple-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
-                <img 
-                  src={student.photo_url} 
-                  alt="Scanned Student Attendee" 
+                <img
+                  src={student.photo_url}
+                  alt="Scanned Student Attendee"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -542,16 +559,16 @@ export default function CoordinatorScanner() {
               <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center">
                 <CheckCircle className="w-6 h-6" />
               </div>
-              
+
               <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-extrabold bg-emerald-500/10 px-3.5 py-1 rounded-full border border-emerald-500/10">
                 ✓ ENTRY MARKED SUCCESSFULLY
               </span>
 
               {/* STUDENT PHOTO */}
               <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-emerald-500/30 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
-                <img 
-                  src={student.photo_url} 
-                  alt="Scanned Student Attendee" 
+                <img
+                  src={student.photo_url}
+                  alt="Scanned Student Attendee"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -567,14 +584,6 @@ export default function CoordinatorScanner() {
                 <p className="text-purple-300 text-xs font-bold uppercase tracking-wide">Welcome to ALGO-RHYTHM 2K26 🎉</p>
                 <p className="text-slate-500 text-[9px] uppercase mt-1">Scanned by: {coordinator.name} &bull; {new Date().toLocaleTimeString()}</p>
               </div>
-
-              <button
-                onClick={resetScanner}
-                className="w-full inline-flex justify-center items-center gap-2 py-3 mt-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-purple-500/10"
-              >
-                <Scan className="w-4 h-4" />
-                Scan Next Ticket
-              </button>
             </div>
           </div>
         )}
@@ -584,7 +593,7 @@ export default function CoordinatorScanner() {
           <div className="w-full glass-card rounded-3xl overflow-hidden border-red-500/25 shadow-red-500/5 shadow-2xl relative animate-fade-in">
             <div className="h-2 w-full bg-red-500" />
             <div className="p-6 space-y-5 text-center flex flex-col items-center">
-              
+
               <span className="text-[10px] uppercase tracking-wider text-red-400 font-extrabold bg-red-500/10 px-3.5 py-1 rounded-full border border-red-500/10 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-red-400" />
                 ALREADY ENTERED
@@ -592,9 +601,9 @@ export default function CoordinatorScanner() {
 
               {/* STUDENT PHOTO */}
               <div className="w-44 h-44 rounded-2xl overflow-hidden border-2 border-red-500/20 bg-black/40 flex items-center justify-center shrink-0 shadow-lg relative my-1">
-                <img 
-                  src={student.photo_url} 
-                  alt="Scanned Student Attendee" 
+                <img
+                  src={student.photo_url}
+                  alt="Scanned Student Attendee"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -633,7 +642,7 @@ export default function CoordinatorScanner() {
                   <span className="font-semibold text-right truncate max-w-[150px]">{entryDetails.scanner_device}</span>
                 </div>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="w-full grid grid-cols-2 gap-3 pt-2">
                 <button
@@ -674,14 +683,6 @@ export default function CoordinatorScanner() {
               <p className="text-xs text-yellow-300 leading-normal max-w-xs mx-auto">
                 Entry is not permitted. This ticket belongs to an unpaid registration.
               </p>
-
-              <button
-                onClick={resetScanner}
-                className="w-full max-w-xs inline-flex justify-center items-center gap-2 py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
-              >
-                <Scan className="w-4 h-4" />
-                Scan Next Ticket
-              </button>
             </div>
           </div>
         )}
@@ -703,14 +704,6 @@ export default function CoordinatorScanner() {
                   {errorMsg || 'Ticket could not be verified.'}
                 </p>
               </div>
-
-              <button
-                onClick={resetScanner}
-                className="w-full max-w-xs inline-flex justify-center items-center gap-2 py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
-              >
-                <Scan className="w-4 h-4" />
-                Scan Next Ticket
-              </button>
             </div>
           </div>
         )}
@@ -719,7 +712,7 @@ export default function CoordinatorScanner() {
 
       {/* 3. Scan History & Statistics Area */}
       <footer className="mt-8 pt-4 border-t border-white/5">
-        
+
         {/* Statistics block */}
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold uppercase">
@@ -744,8 +737,8 @@ export default function CoordinatorScanner() {
             </div>
           ) : (
             myStats.recent_scans.slice(0, 5).map((log: any) => (
-              <div 
-                key={log.id} 
+              <div
+                key={log.id}
                 className="flex justify-between items-center p-3 bg-white/5 border border-white/5 rounded-xl"
               >
                 <div>
@@ -764,16 +757,15 @@ export default function CoordinatorScanner() {
         <div className="grid grid-cols-2 gap-3 mt-4 print:hidden">
           <button
             onClick={cameraActive ? stopCamera : startCamera}
-            className={`w-full inline-flex justify-center items-center gap-1.5 px-4 py-2.5 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-colors ${
-              cameraActive 
+            className={`w-full inline-flex justify-center items-center gap-1.5 px-4 py-2.5 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-colors ${cameraActive
                 ? 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-300'
                 : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10'
-            }`}
+              }`}
           >
             <Camera className="w-4 h-4" />
             {cameraActive ? 'Stop Camera' : 'Start Camera'}
           </button>
-          
+
           <button
             onClick={resetScanner}
             disabled={scanState === 'SCANNING'}
