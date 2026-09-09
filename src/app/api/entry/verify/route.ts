@@ -14,11 +14,39 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 1. Clean token from any URL or format
-    let cleanedToken = String(ticket_token).trim();
-    if (cleanedToken.includes('/ticket/')) {
-      cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0]?.split('#')[0] || cleanedToken;
+    // 1. Clean token from any URL, JSON, or format
+    let cleanedToken = String(ticket_token || '').trim();
+
+    // If it's a JSON string, try parsing it
+    if (cleanedToken.startsWith('{') && cleanedToken.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(cleanedToken);
+        cleanedToken = parsed.ticket_token || parsed.token || parsed.ticket_id || parsed.id || parsed.registration_number || cleanedToken;
+      } catch {}
     }
+
+    // If it's a URL, extract token or path parameter
+    if (cleanedToken.includes('http://') || cleanedToken.includes('https://') || cleanedToken.includes('/')) {
+      try {
+        const urlObj = new URL(cleanedToken.startsWith('http') ? cleanedToken : `http://dummy.com/${cleanedToken.replace(/^\/+/, '')}`);
+        const paramToken = urlObj.searchParams.get('token') || urlObj.searchParams.get('ticket_token');
+        if (paramToken) {
+          cleanedToken = paramToken;
+        } else {
+          const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+          if (pathSegments.length > 0) {
+            cleanedToken = pathSegments[pathSegments.length - 1];
+          }
+        }
+      } catch {
+        if (cleanedToken.includes('/ticket/')) {
+          cleanedToken = cleanedToken.split('/ticket/').pop()?.split('?')[0]?.split('#')[0] || cleanedToken;
+        }
+      }
+    }
+
+    // Strip leading/trailing quotes or slashes
+    cleanedToken = cleanedToken.replace(/^[/"'\s]+|[/"'\s]+$/g, '').trim();
 
     // Special Admin Test QR Handling
     const isAdminTest = cleanedToken.toLowerCase() === 'admin-test' || 
@@ -148,55 +176,96 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Lookup candidate registration matching token, ticket ID, or registration number
-    let { data: reg, error: regErr } = await supabaseAdmin
-      .from('registrations')
-      .select('*')
-      .eq('ticket_token', cleanedToken)
-      .maybeSingle();
+    // 3. Robust Lookup candidate registration matching token, ticket ID, or registration number
+    let reg: any = null;
+    let dbErrorMsg: string | null = null;
+    const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanedToken);
 
-    if (!reg) {
-      // Also try by ticket_id (e.g. ALG26-CSE-0001 or AR-1027)
-      const { data: byTicketId } = await supabaseAdmin
+    // 3a. Try by ticket_token (primary field)
+    try {
+      const { data, error } = await supabaseAdmin
         .from('registrations')
         .select('*')
-        .eq('ticket_id', cleanedToken)
+        .eq('ticket_token', cleanedToken)
         .maybeSingle();
-      if (byTicketId) reg = byTicketId;
+
+      if (data) {
+        reg = data;
+      } else if (error && error.code !== 'PGRST116') {
+        dbErrorMsg = error.message;
+        console.warn('Verify lookup by ticket_token warning:', error);
+      }
+    } catch (e: any) {
+      dbErrorMsg = e?.message || 'Query error';
     }
 
+    // 3b. Also try by ticket_id (e.g. ALG26-CSE-0001 or AR-1027)
     if (!reg) {
-      // Also try by registration_number
-      const { data: byRegNo } = await supabaseAdmin
-        .from('registrations')
-        .select('*')
-        .eq('registration_number', cleanedToken)
-        .maybeSingle();
-      if (byRegNo) reg = byRegNo;
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('registrations')
+          .select('*')
+          .ilike('ticket_id', cleanedToken)
+          .maybeSingle();
+
+        if (data) {
+          reg = data;
+          dbErrorMsg = null;
+        } else if (error && error.code !== 'PGRST116') {
+          dbErrorMsg = error.message;
+        }
+      } catch {}
     }
 
+    // 3c. Also try by registration_number
     if (!reg) {
-      // Also try by registration id (UUID)
-      const { data: byId } = await supabaseAdmin
-        .from('registrations')
-        .select('*')
-        .eq('id', cleanedToken)
-        .maybeSingle();
-      if (byId) reg = byId;
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('registrations')
+          .select('*')
+          .eq('registration_number', cleanedToken)
+          .maybeSingle();
+
+        if (data) {
+          reg = data;
+          dbErrorMsg = null;
+        } else if (error && error.code !== 'PGRST116') {
+          dbErrorMsg = error.message;
+        }
+      } catch {}
     }
 
-    if (regErr) {
-      console.error('Verify entry lookup error:', regErr);
+    // 3d. Also try by registration id (UUID) if valid UUID format
+    if (!reg && isValidUUID) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('registrations')
+          .select('*')
+          .eq('id', cleanedToken)
+          .maybeSingle();
+
+        if (data) {
+          reg = data;
+          dbErrorMsg = null;
+        } else if (error && error.code !== 'PGRST116') {
+          dbErrorMsg = error.message;
+        }
+      } catch {}
+    }
+
+    // If registration was NOT found and there was a fatal DB error (e.g. network / RLS failure)
+    if (!reg && dbErrorMsg) {
+      console.error('Verify entry lookup error:', dbErrorMsg);
       return NextResponse.json({
         success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Database query failed.' }
+        error: { code: 'DATABASE_ERROR', message: `Database query failed: ${dbErrorMsg}` }
       }, { status: 500 });
     }
 
     if (!reg) {
       return NextResponse.json({
         success: false,
-        error: { code: 'INVALID_TICKET', message: 'INVALID TICKET' }
+        error: { code: 'INVALID_TICKET', message: 'Ticket not found in registrations database.' }
       }, { status: 404 });
     }
 
